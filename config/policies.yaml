@@ -1,0 +1,157 @@
+# ==============================================================================
+# Z-AgentShield Security Policy Configuration
+# Enterprise policy definitions for AI agent action gating.
+# Evaluated in strict order: DENY -> REVIEW -> ALLOW -> DEFAULT-DENY
+# ==============================================================================
+
+version: "1.0"
+description: "Default enterprise security policy rules for AI Agent action mediation."
+default_verdict: "BLOCK"
+
+# ------------------------------------------------------------------------------
+# 1. Prohibited Actions & Restricted Resources (Mandatory BLOCK)
+# Deny rules are evaluated first. If any deny rule matches, the action is
+# immediately BLOCKED regardless of claimed or trusted permissions.
+# ------------------------------------------------------------------------------
+deny_rules:
+  - rule_id: "DENY-RAW-SECRETS"
+    description: "Prohibit any direct access to secret stores, private keys, or credential vaults."
+    applicable_action: "*"
+    applicable_resource: "secrets://*|vault://*|kms://*|credentials://*"
+    severity: "CRITICAL"
+    base_risk_score: 100.0
+    enabled: true
+    verdict: "BLOCK"
+
+  - rule_id: "DENY-DESTRUCTIVE-ADMIN"
+    description: "Prohibit destructive database operations such as drop, truncate, or wipe."
+    applicable_action: "drop_*|truncate_*|wipe_*|format_*"
+    applicable_resource: "*"
+    category: "ADMIN"
+    severity: "CRITICAL"
+    base_risk_score: 95.0
+    enabled: true
+    verdict: "BLOCK"
+
+  - rule_id: "DENY-SYSTEM-LOG-TAMPER"
+    description: "Prohibit deletion, modification, or purging of system audit logs."
+    applicable_action: "delete_*|purge_*|truncate_*|clear_*"
+    applicable_resource: "audit://*|logs://*|system://audit/*"
+    category: "DELETE"
+    severity: "CRITICAL"
+    base_risk_score: 95.0
+    enabled: true
+    verdict: "BLOCK"
+
+  - rule_id: "DENY-UNAUTHORIZED-OS-EXEC"
+    description: "Prohibit arbitrary operating system command execution or shell spawning."
+    applicable_action: "exec_shell|spawn_process|run_command|os_exec"
+    applicable_resource: "system://shell|system://kernel|os://*"
+    category: "ADMIN"
+    severity: "CRITICAL"
+    base_risk_score: 100.0
+    enabled: true
+    verdict: "BLOCK"
+
+# ------------------------------------------------------------------------------
+# 2. Operations Requiring Human-in-the-Loop Verification (REVIEW)
+# Review rules escalate high-impact actions to the human approval queue.
+# ------------------------------------------------------------------------------
+review_rules:
+  - rule_id: "REV-BULK-DATA-EXPORT"
+    description: "Bulk data export operations require human-in-the-loop sign-off."
+    applicable_action: "export_*|bulk_export*|dump_data*"
+    applicable_resource: "db://*|s3://*|storage://*"
+    category: "EXPORT"
+    required_permissions:
+      - "export.data"
+    severity: "HIGH"
+    base_risk_score: 65.0
+    enabled: true
+    verdict: "REVIEW"
+
+  - rule_id: "REV-FINANCIAL-PAYMENTS"
+    description: "Large-scale financial transfers and payment processing require approval."
+    applicable_action: "execute_transfer|update_balance|process_payment|disburse_funds"
+    applicable_resource: "api://finance/*|db://payments/*"
+    category: "WRITE"
+    required_permissions:
+      - "finance.write"
+    severity: "HIGH"
+    base_risk_score: 60.0
+    enabled: true
+    verdict: "REVIEW"
+
+  - rule_id: "REV-PRIVILEGED-UPDATE"
+    description: "Modifications to identity, roles, or customer security settings require review."
+    applicable_action: "modify_role|assign_permission|update_security_profile"
+    applicable_resource: "api://iam/*|db://auth/*"
+    category: "UPDATE"
+    required_permissions:
+      - "iam.manage"
+    severity: "HIGH"
+    base_risk_score: 55.0
+    enabled: true
+    verdict: "REVIEW"
+
+  - rule_id: "REV-SENSITIVE-EXPORT"
+    description: "Export operations on data stores escalate to human-in-the-loop review."
+    applicable_action: "export_*|bulk_export*|dump_data*"
+    applicable_resource: "data://*|exports://*|reports/*"
+    category: "EXPORT"
+    severity: "HIGH"
+    base_risk_score: 55.0
+    enabled: true
+    verdict: "REVIEW"
+
+# ------------------------------------------------------------------------------
+# 3. Explicitly Permitted Routine Operations (ALLOW)
+# Actions that match an allow rule AND possess trusted credentials for all
+# required permissions are granted execution.
+# ------------------------------------------------------------------------------
+allow_rules:
+  - rule_id: "ALLOW-PUBLIC-READ"
+    description: "Allow routine read queries against public resources without special permissions."
+    applicable_action: "read_*|get_*|query_*|search_*"
+    applicable_resource: "public/*|api://public/*"
+    category: "READ"
+    severity: "LOW"
+    base_risk_score: 5.0
+    enabled: true
+    verdict: "ALLOW"
+
+  - rule_id: "ALLOW-CATALOG-READ"
+    description: "Allow routine read queries against the product and public data catalog."
+    applicable_action: "get_*|query_*|read_*|search_*"
+    applicable_resource: "api://catalog/*|db://catalog/*"
+    category: "READ"
+    required_permissions:
+      - "catalog.read"
+    severity: "LOW"
+    base_risk_score: 10.0
+    enabled: true
+    verdict: "ALLOW"
+
+  - rule_id: "ALLOW-REPORTING-READ"
+    description: "Allow verified read operations for standard operational reports."
+    applicable_action: "query_report|read_metrics|get_summary"
+    applicable_resource: "db://reporting/*|api://reports/*"
+    category: "READ"
+    required_permissions:
+      - "reports.read"
+    severity: "LOW"
+    base_risk_score: 15.0
+    enabled: true
+    verdict: "ALLOW"
+
+  - rule_id: "ALLOW-ORDER-STATUS-READ"
+    description: "Allow agents to read order status and customer shipment tracking."
+    applicable_action: "get_order_status|track_shipment|view_order"
+    applicable_resource: "api://orders/status/*|api://shipments/*"
+    category: "READ"
+    required_permissions:
+      - "orders.read"
+    severity: "LOW"
+    base_risk_score: 10.0
+    enabled: true
+    verdict: "ALLOW"

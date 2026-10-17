@@ -1,0 +1,50 @@
+version: "3.8"
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zagentshield-gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DATABASE_PATH=/app/data/zagentshield.db
+      - POLICY_CONFIG_PATH=/app/config/policies.yaml
+      - RISK_THRESHOLD_REVIEW=40.0
+      - RISK_THRESHOLD_BLOCK=75.0
+      - LOG_LEVEL=INFO
+    volumes:
+      - shield_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zagentshield-dashboard
+    restart: unless-stopped
+    command: ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    ports:
+      - "8501:8501"
+    environment:
+      - DATABASE_PATH=/app/data/zagentshield.db
+      - POLICY_CONFIG_PATH=/app/config/policies.yaml
+      - RISK_THRESHOLD_REVIEW=40.0
+      - RISK_THRESHOLD_BLOCK=75.0
+    volumes:
+      - shield_data:/app/data
+    depends_on:
+      - gateway
+
+volumes:
+  shield_data:
+    driver: local

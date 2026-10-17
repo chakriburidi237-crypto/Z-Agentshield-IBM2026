@@ -1,0 +1,25 @@
+# Z-AgentShield Core Dependencies
+# Real-Time Security Layer for Enterprise AI Agents
+
+# API Backend
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+
+# Data Validation & Settings
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+
+# Operations Dashboard
+streamlit>=1.32.0
+
+# Policy Definition & Parsing
+pyyaml>=6.0.1
+
+# Behavioral Anomaly Detection & Analytics
+scikit-learn>=1.4.0
+pandas>=2.2.0
+numpy>=1.26.0
+
+# HTTP Client for Testing & Integration
+requests>=2.31.0
