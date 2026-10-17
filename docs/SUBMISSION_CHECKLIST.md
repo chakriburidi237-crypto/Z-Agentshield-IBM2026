@@ -12,10 +12,8 @@ has been made or that the project satisfies the event rules.
 - [x] Windows local startup guide: [LOCAL_RUN_AND_VERIFICATION.md](LOCAL_RUN_AND_VERIFICATION.md).
 - [x] Source repository URL provided and verified public:
   <https://github.com/chakriburidi237-crypto/Z--AgentShield-IBM-2026>.
-  The remote `main` currently contains only a bare README; this local project
-  worktree is not connected to or published on that remote.
-- [ ] Authorize and publish the completed local source to the submission
-  repository; no commit or push has been made.
+  The completed local project has been published to `main`; the starter
+  repository history was preserved and merged without rewriting commits.
 - [x] Create and verify a source-only ZIP: [Z-AgentShield-submission-source-2026-10-17.zip](../../Z-AgentShield-submission-source-2026-10-17.zip).
   The archive excludes `.git`, virtual environments, local databases, local
   secrets, and editor-specific settings. It does not preserve Git history.
