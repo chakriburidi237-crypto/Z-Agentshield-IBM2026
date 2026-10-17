@@ -14,9 +14,10 @@ has been made or that the project satisfies the event rules.
   <https://github.com/chakriburidi237-crypto/Z--AgentShield-IBM-2026>.
   The completed local project has been published to `main`; the starter
   repository history was preserved and merged without rewriting commits.
-- [x] Create and verify a source-only ZIP: [Z-AgentShield-submission-source-2026-10-17.zip](../../Z-AgentShield-submission-source-2026-10-17.zip).
-  The archive excludes `.git`, virtual environments, local databases, local
-  secrets, and editor-specific settings. It does not preserve Git history.
+- [x] Create and verify source-only ZIP artifact:
+  `Z-AgentShield-submission-source-2026-10-17.zip`. It excludes `.git`,
+  virtual environments, local databases, local secrets, and editor-specific
+  settings; it does not preserve Git history.
 - [ ] Confirm required pitch-deck PDF filename and export final PDF: **TODO**.
 - [ ] Record and review a demo video of no more than three minutes: **TODO**.
 - [x] Team name provided: **Team Z Innovators**.
