@@ -23,7 +23,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from zagentshield.anomalies.detector import AnomalyConfig, AnomalyDetector
 from zagentshield.audit.logger import AuditLogger
+from zagentshield.config import get_settings
 from zagentshield.core.enums import ActionVerdict, RiskLevel
+from zagentshield.core.models import AgentRequest, SecurityEvaluation
 from zagentshield.core.schemas import HealthResponse, InterceptRequest, InterceptResponse
 from zagentshield.db.database import Database
 from zagentshield.db.repository import (
@@ -210,11 +212,52 @@ class AppServices:
         repository: SecurityRepository,
         audit_logger: AuditLogger,
         anomaly_detector: Optional[AnomalyDetector] = None,
+        resource_classifier: Optional[Callable[[AgentRequest], bool]] = None,
     ) -> None:
         self.policy_engine = policy_engine
         self.repository = repository
         self.audit_logger = audit_logger
         self.anomaly_detector = anomaly_detector
+        self.resource_classifier = resource_classifier
+
+
+def _apply_resource_classification_gate(
+    services: AppServices,
+    request: AgentRequest,
+    evaluation: SecurityEvaluation,
+) -> SecurityEvaluation:
+    """Convert policy ALLOW to BLOCK unless a trusted classifier verifies it."""
+    if evaluation.verdict != ActionVerdict.ALLOW:
+        return evaluation
+
+    if services.resource_classifier is None:
+        reason = (
+            "Trusted resource classification is not configured; "
+            "the action was denied."
+        )
+    else:
+        try:
+            if services.resource_classifier(request):
+                return evaluation
+        except Exception:
+            logger.exception(
+                "Trusted resource classification failed for request '%s'",
+                request.request_id,
+            )
+        reason = (
+            "The trusted resource classifier did not verify this resource; "
+            "the action was denied."
+        )
+
+    return SecurityEvaluation(
+        request_id=evaluation.request_id,
+        verdict=ActionVerdict.BLOCK,
+        risk_score=evaluation.risk_score,
+        risk_level=evaluation.risk_level,
+        reasons=[*evaluation.reasons, reason],
+        matched_rule_ids=evaluation.matched_rule_ids,
+        timestamp=evaluation.timestamp,
+    )
 
 
 def build_default_services(
@@ -250,6 +293,10 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
                   production service graph is constructed on first request via
                   lifespan. Tests should always supply injected services.
     """
+    settings = get_settings()
+    docs_enabled = settings.app_env.strip().lower() == "development"
+    docs_url = "/docs" if docs_enabled else None
+    openapi_url = "/openapi.json" if docs_enabled else None
     app = FastAPI(
         title="Z-AgentShield Security Gateway",
         description=(
@@ -258,11 +305,10 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
             "risk scoring, and behavioral anomaly detection."
         ),
         version=API_VERSION,
-        # Disable OpenAPI docs in production (enable locally via env)
-        docs_url="/docs",
+        # Interactive documentation and its schema exist only in development.
+        docs_url=docs_url,
         redoc_url=None,
-        # Do not expose /openapi.json in production; configure externally.
-        openapi_url="/openapi.json",
+        openapi_url=openapi_url,
     )
 
     # Store services in app state for dependency injection
@@ -300,7 +346,13 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
         svc = request.app.state.services
         if svc is None:
             # Lazy init for production (not used in tests)
-            svc = build_default_services()
+            settings = get_settings()
+            svc = build_default_services(
+                db_path=settings.database_path,
+                policy_path=settings.policy_config_path,
+                risk_threshold_review=settings.risk_threshold_review,
+                risk_threshold_block=settings.risk_threshold_block,
+            )
             request.app.state.services = svc
         return svc
 
@@ -319,7 +371,7 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
             "service": "Z-AgentShield Security Gateway",
             "version": API_VERSION,
             "status": "active",
-            "docs": "/docs",
+            "docs": docs_url,
             "health": "/health",
         }
 
@@ -371,6 +423,33 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
         existing = svc.repository.get_security_event(agent_request.request_id)
         if existing is not None:
             existing_eval = _build_evaluation_from_event(existing)
+            if existing.verdict == ActionVerdict.ALLOW.value:
+                same_resource_request = (
+                    existing.agent_id == agent_request.agent_id
+                    and existing.action == agent_request.action
+                    and existing.category == agent_request.category.value
+                    and existing.resource == agent_request.resource
+                )
+                if same_resource_request:
+                    existing_eval = _apply_resource_classification_gate(
+                        svc,
+                        agent_request,
+                        existing_eval,
+                    )
+                else:
+                    existing_eval = SecurityEvaluation(
+                        request_id=existing_eval.request_id,
+                        verdict=ActionVerdict.BLOCK,
+                        risk_score=existing_eval.risk_score,
+                        risk_level=existing_eval.risk_level,
+                        reasons=[
+                            *existing_eval.reasons,
+                            "The repeated request identifier did not match the "
+                            "recorded resource request; the action was denied.",
+                        ],
+                        matched_rule_ids=existing_eval.matched_rule_ids,
+                        timestamp=existing_eval.timestamp,
+                    )
             base = InterceptResponse.from_evaluation(existing_eval)
             return InterceptResponseWithTicket(
                 **base.model_dump(),
@@ -399,6 +478,12 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={"error": "Policy evaluation failed. Request denied.", "code": "POLICY_ERROR"},
             )
+
+        evaluation = _apply_resource_classification_gate(
+            svc,
+            agent_request,
+            evaluation,
+        )
 
         # Step 4: Audit persistence (fail-closed on failure)
         try:

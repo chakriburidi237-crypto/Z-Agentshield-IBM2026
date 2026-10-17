@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Z-AgentShield mark</title>
+  <desc id="desc">A blue shield enclosing a connected AI network node.</desc>
+  <defs>
+    <linearGradient id="shield" x1="32" y1="20" x2="224" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#0F2C54"/>
+    </linearGradient>
+  </defs>
+  <path d="M128 18 220 54v61c0 59-38 102-92 123-54-21-92-64-92-123V54l92-36Z" fill="none" stroke="#38BDF8" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M128 31 207 62v53c0 50-31 86-79 107-48-21-79-57-79-107V62l79-31Z" fill="url(#shield)"/>
+  <path d="m91 128 25 25 51-54" fill="none" stroke="#E0F2FE" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="91" cy="128" r="10" fill="#38BDF8"/>
+  <circle cx="167" cy="99" r="10" fill="#38BDF8"/>
+</svg>

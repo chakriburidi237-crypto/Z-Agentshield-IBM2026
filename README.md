@@ -1,60 +1,78 @@
 # Z-AgentShield
 
-**Subtitle:** Real-Time Security Layer for Enterprise AI Agents  
-**Tagline:** *Let AI act. Keep every action under control.*  
-**Context:** IBM Z Datathon — Enterprise AI Security & Governance Track  
-**Test Suite Status:** ![Tests](https://img.shields.io/badge/tests-174%2F174%20passing-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![Architecture](https://img.shields.io/badge/arch-linux%2Fs390x%20%7C%20amd64%20%7C%20arm64-orange)
+**Enterprise AI Security**
+*Let AI act. Keep every action under control.*
+
+**Source repository:** <https://github.com/chakriburidi237-crypto/Z--AgentShield-IBM-2026>
 
 ---
 
-## Overview
+## Problem
 
-As autonomous AI agents are granted access to enterprise APIs, sensitive databases, and mission-critical infrastructure, organizations face unmonitored execution risks, prompt injections, privilege escalations, and accidental data exposure.
+Autonomous agents can initiate actions that access data or change systems. Teams
+need a consistent way to evaluate proposed actions, record decisions, and route
+selected actions for human review.
 
-**Z-AgentShield** is an inline, real-time security mediation layer that intercepts every agent action, evaluates it against enterprise security policies and behavioral baselines, and enforces a deterministic tri-state gating decision:
+## Proposed solution
 
-- **ALLOW:** Safe, compliant actions proceed with zero latency degradation.
-- **REVIEW:** Anomalous or elevated-risk actions trigger human-in-the-loop escalation.
-- **BLOCK:** Dangerous actions, credential exfiltration, or prohibitive policy violations are immediately neutralized.
+**Z-AgentShield** is a local security-gateway prototype with a FastAPI API, a
+YAML policy engine, SQLite persistence, anomaly-analysis components, and a
+Streamlit operations dashboard. The policy engine produces one of three
+decisions:
 
-Every evaluation is logged into an immutable audit trail with sensitive PII and credential redaction, built to run seamlessly on enterprise hardware including **IBM LinuxONE (s390x)**.
+- **ALLOW:** The policy permits the proposed action and the trusted resource
+  classifier verifies the target.
+- **REVIEW:** The policy routes the proposed action to the pending review queue.
+- **BLOCK:** The action is denied by a mandatory rule, missing authorization,
+  default-deny behavior, or an unavailable/unverified resource classifier.
 
----
+The API records decisions and redacts selected sensitive request parameters.
+It evaluates requests; it does not connect to or execute operations on
+downstream enterprise systems.
 
-## System Architecture
+## Architecture
 
 ```text
-┌─────────────────┐       ┌────────────────────────────────────────────────────────┐       ┌──────────────────────┐
-│ Enterprise AI   │ ----> │                      Z-AgentShield                     │ ----> │ Enterprise Systems   │
-│ Autonomous Agent│       │                                                        │       │ APIs, DBs, Services  │
-└─────────────────┘       │  1. Request Interception & Schema Validation           │       └──────────────────────┘
-                          │  2. Redaction & Credential Masking Engine              │                  ▲
-                          │  3. Rule-Based Policy & Risk Scoring Engine            │                  │
-                          │  4. Behavioral Anomaly Detector (Velocity & Baselines) │                  │
-                          │  5. Decision Gating (ALLOW / REVIEW / BLOCK)           │ ─── [ ALLOW ] ───┘
-                          │                                                        │
-                          │  SQLite Audit Trail <──> Streamlit Operations Console  │
-                          └────────────────────────────────────────────────────────┘
+Agent request
+     |
+     v
+FastAPI schema validation and request identity checks
+     |
+     +--> Optional anomaly assessment
+     |
+     v
+Policy engine: mandatory deny -> human review -> allow rules -> default deny
+     |
+     +--> ALLOW is converted to BLOCK unless an injected trusted resource
+     |    classifier verifies the requested target.
+     |
+     +--> Audit logger redacts selected parameter keys/patterns and persists
+     |    the decision and (when applicable) a pending review ticket.
+     |
+     +--> ALLOW / REVIEW / BLOCK response (no downstream action execution)
+                  |
+                  +--> SQLite repository <-- Streamlit operations dashboard
 ```
 
----
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the request and review
+flows and their trust boundaries.
 
 ## Implementation Status Tracker
 
-All 10 project phases are fully implemented, verified, and hardened:
+Implementation status is limited to what is present and verified locally:
 
 | Phase | Component / Layer | Status | Description |
 |:-----:|-------------------|:------:|-------------|
 | **1** | **Project Scaffolding & Config** | **COMPLETED** | Folder structure, `.env.example`, `requirements.txt`, and safe settings. |
 | **2** | **Domain Models & Request Schemas** | **COMPLETED** | Pydantic v2 schemas (`AgentRequest`, `SecurityEvaluation`, `InterceptRequest`). |
 | **3** | **Policy Engine & Risk Scoring** | **COMPLETED** | YAML policy rule parser, pattern matching, and composite risk scoring. |
-| **4** | **Persistence & Redacted Audit Log** | **COMPLETED** | SQLite WAL persistence, PII/secret sanitizer, and review queue tables. |
-| **5** | **Decision Gating & Execution Interception** | **COMPLETED** | Fail-closed execution gate, callbacks, and human-in-the-loop ticket lifecycle. |
-| **6** | **Behavioral Anomaly Detection** | **COMPLETED** | Sliding-window velocity burst detection and IsolationForest threat scoring. |
-| **7** | **FastAPI Security Gateway** | **COMPLETED** | REST endpoints (`/api/v1/intercept`, `/api/v1/reviews`, `/health`) with fail-closed handling. |
-| **8** | **Streamlit Operations Console** | **COMPLETED** | Real-time SOC dashboard for telemetry, approval triage, and policy simulation. |
-| **9** | **Automated Test Suite** | **COMPLETED** | Complete regression test suite (**174/174 passing** across all modules). |
-| **10** | **LinuxONE (s390x) Deployment** | **COMPLETED** | Multi-arch Dockerfile, docker-compose, and enterprise deployment guide. |
+| **4** | **Persistence & Redacted Audit Log** | **IMPLEMENTED** | SQLite WAL persistence, heuristic redaction, and review queue tables; not cryptographically immutable. |
+| **5** | **Decision Gating & Review Lifecycle** | **IMPLEMENTED** | Policy decisions and review state transitions; approval does not execute downstream actions. |
+| **6** | **Behavioral Anomaly Detection** | **IMPLEMENTED; SCOPE LIMITED** | Detector and analytics code are present; dashboard charts summarize persisted events and are not a live alert feed. |
+| **7** | **FastAPI Security Gateway** | **IMPLEMENTED; INTEGRATION REQUIRED** | REST endpoints are present; no production identity provider or trusted resource classifier is configured by default. |
+| **8** | **Streamlit Operations Console** | **LOCAL UI** | Reads the configured SQLite database and policy configuration. Reviewer decisions are disabled until trusted authentication is integrated. |
+| **9** | **Automated Test Suite** | **LOCAL TESTS** | Run the command in this README; see the resulting test output rather than relying on a static badge. |
+| **10** | **LinuxONE (s390x) Deployment** | **NOT VERIFIED** | Container/deployment files and guidance are present; no actual LinuxONE deployment evidence is included. |
 
 ---
 
@@ -74,10 +92,11 @@ Z-AgentShield/
 │       └── db/               # SQLite database & repository
 ├── dashboard/
 │   └── app.py                # Streamlit SOC Operations Console
-├── tests/                    # 174 Unit and integration tests
+├── assets/images/            # Locally bundled original SVG branding
+├── tests/                    # 184 unit and integration tests (verified locally)
 ├── config/
 │   └── policies.yaml         # Enterprise security policy definitions
-├── docs/                     # Architectural and LinuxONE deployment specifications
+├── docs/                     # Architecture, demo, local run, and submission guides
 ├── scripts/
 │   └── seed_demo_data.py     # Synthetic enterprise telemetry generator
 ├── Dockerfile                # Multi-arch container image (linux/s390x, amd64, arm64)
@@ -88,73 +107,247 @@ Z-AgentShield/
 
 ---
 
+## Features
+
+- FastAPI request validation and policy evaluation.
+- YAML-configured mandatory deny, review, allow, and default-deny rules.
+- Optional anomaly analysis and risk scoring.
+- SQLite audit records and pending human-review tickets.
+- Streamlit views for persisted decisions, review tickets, audit records,
+  event analytics, and non-persistent policy previews.
+- Selected parameter-key and inline-secret redaction before audit persistence.
+- Dashboard sections for SOC overview, read-only human review, paginated audit
+  history, bounded historical analytics, and policy-only simulation.
+- Bounded, time-windowed event totals and repository-backed review filters.
+- Dashboard gateway/database health indicators and an original local security
+  flow visual; no unofficial IBM logo or IBM integration is implied.
+
+## Technology stack
+
+- Python 3.11 or newer, FastAPI, Uvicorn, Pydantic, and Pydantic Settings.
+- Streamlit for the local operations console.
+- SQLite for audit events and review tickets.
+- PyYAML, pandas, NumPy, and scikit-learn for policies and analytics.
+- `unittest` for automated tests; FastAPI `TestClient` is used in API tests.
+
+## API documentation and access
+
+Swagger UI and OpenAPI JSON are enabled only when `APP_ENV=development`
+The application and `.env.example` default to `demo`, which disables both
+routes. The local runner explicitly sets development mode and opens
+<http://127.0.0.1:8000/docs>. Do not set development mode in a deployment.
+This project does not provide authenticated access to API docs.
+Disabling docs does not affect the implemented API routes:
+
+| Method | Route | Purpose | Access |
+| --- | --- | --- | --- |
+| `GET` | `/` | Service identity | Public |
+| `GET` | `/health` | Gateway health | Public |
+| `POST` | `/api/v1/intercept` | Evaluate and record an action | Public |
+| `GET` | `/api/v1/decisions/{request_id}` | Retrieve a recorded decision | Public |
+| `GET` | `/api/v1/reviews` | List pending tickets | Public |
+| `POST` | `/api/v1/reviews/{ticket_id}/decision` | Record a review decision | Requires `X-Reviewer-Id` |
+| `GET` | `/api/v1/audit/logs` | List sanitized audit records | Requires `X-Reviewer-Id` |
+
+The reviewer header is an integration boundary, not authentication. A trusted
+identity proxy must validate the reviewer and inject the header before the
+privileged routes are exposed. Until that exists, the dashboard displays the
+queue but keeps approval/rejection controls disabled.
+
+The API's root response reports `docs: null` when documentation is disabled.
+Internal clients should use the documented route contract and do not depend on
+the OpenAPI endpoint in deployment modes.
+
+## Dashboard data sources and limits
+
+- **SOC overview:** exact event and verdict totals from SQLite for the selected
+  24-hour, 7-day, 30-day, or all-history window; recent event and BLOCK rows
+  come from the repository. Pending-review totals are queried independently.
+- **Human review:** paginated pending tickets from the repository, filtered by
+  agent ID and risk level. Decision controls are disabled because authenticated
+  reviewer authorization and a trusted identity integration are absent.
+- **Audit trail:** paginated persisted events filtered by time window, decision,
+  and agent ID. Event-type filtering is unavailable because the schema has no
+  event-type field. Parameters are not displayed.
+- **Behavioral analytics:** charts derive from persisted records, capped at the
+  500 most recent matching rows. The schema cannot distinguish synthetic from
+  operational data. These are historical summaries, not live ML detection.
+- **Policy simulator:** evaluates the policy engine only. Inputs are not
+  persisted and cannot authorize an action. A policy ALLOW preview is not a
+  gateway ALLOW; the gateway still fails closed until a trusted resource
+  classifier is configured.
+- Agent inventory, policy editing, and access/settings screens are not shown:
+  the backend has no authoritative agent registry, policy administration API,
+  or dashboard authentication/authorization system to support them.
+
+## Installation
+
+From a PowerShell terminal at the repository root:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+If `.venv` already exists, do not recreate it. The Windows runner checks for
+dependencies and never installs packages automatically.
+
 ## Quickstart & Verification
 
-### 1. Environment Setup
+### Windows 11: start the complete application
 
-```bash
-# Clone and navigate to repository
-cd Z-AgentShield
+Prerequisites: Windows 11, Python 3.11 or newer, and the dependencies in
+`requirements.txt`. The runner uses `.venv\Scripts\python.exe` when that
+project environment exists; otherwise it uses Python on `PATH`. To select
+another installed interpreter, set `ZAGENTSHIELD_PYTHON` to its full executable
+path before launching the runner. It checks imports and does not install
+packages automatically.
 
-# Copy template configuration
-cp .env.example .env
+From PowerShell at the repository root:
 
-# Install dependencies
-pip install -r requirements.txt
+```powershell
+.\scripts\run_zagentshield.bat
 ```
 
-### 2. Run Test Suite (174/174 Passing)
+The runner sets `PYTHONPATH=src`, checks ports 8000 and 8501, and starts API and
+dashboard in separate titled terminals. It sets `APP_ENV=development` for this
+loopback-only local run so Swagger UI is available. It verifies the gateway identity and
+health before reporting it online, then checks Streamlit's health endpoint.
+The run uses a new temporary SQLite database, so verification data does not
+modify `data\zagentshield.db`. Use the stop script after stopping both server
+terminals to remove that run's temporary database.
 
-```bash
-# Execute full unit and integration test suite
-python -m unittest discover tests
+Open:
+
+- Dashboard: <http://localhost:8501>
+- Swagger UI: <http://127.0.0.1:8000/docs>
+- API health: <http://127.0.0.1:8000/health>
+- API root: <http://127.0.0.1:8000/>
+
+### Start API and dashboard separately
+
+From the repository root, use two terminals. These commands use the configured
+`.venv`; set `PYTHONPATH` in each terminal for the API:
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:APP_ENV = "development"
+.\.venv\Scripts\python.exe -m uvicorn zagentshield.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-### 3. Seed Realistic Demonstration Data
-
-```bash
-python scripts/seed_demo_data.py
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run dashboard\app.py --server.address 127.0.0.1 --server.port 8501
 ```
 
-### 4. Launch FastAPI Security Gateway
+For a separate local session without the runner, optionally set values from
+`.env.example` such as `DATABASE_PATH`, `POLICY_CONFIG_PATH`, `PORT`, and
+`DASHBOARD_PORT`. The API initializes its SQLite tables on its first request;
+the dashboard initializes the same configured database at startup. Defaults
+are `data\zagentshield.db`, `config\policies.yaml`, port 8000, and port 8501.
 
-```bash
-uvicorn zagentshield.api.app:app --host 127.0.0.1 --port 8000 --reload
+### Live verification and unit tests
+
+With both services running, execute the live verification:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_zagentshield.py
 ```
 
-Test interception endpoint:
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/intercept \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent_id": "agent-001",
-    "action": "read_faq",
-    "category": "READ",
-    "resource": "public/faq/knowledge_base",
-    "parameters": {"query": "login"}
-  }'
+It checks the API, Swagger UI, OpenAPI paths, live interception and recorded
+decisions, review queue, audit authorization/redaction, and dashboard HTTP
+health. It uses synthetic data, does not approve or reject tickets, and reports
+the dashboard URL for manual visual inspection. When run against a persistent
+database, it adds up to two synthetic audit events and one pending ticket if
+the configured policy returns `REVIEW`; use the one-command runner to isolate
+these records in its temporary database.
+
+Run the existing test suite:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m unittest discover -s tests -p "test_*.py" -v
+$LASTEXITCODE
 ```
 
-### 5. Launch Streamlit Operations Console (SOC Dashboard)
+Use a Python environment with the test dependencies installed. On this machine,
+the PATH Python 3.13 environment ran all 184 tests successfully (exit code 0).
+The project `.venv` is
+Python 3.14.7 and its installed Starlette test client currently lacks the
+`httpx2` package, so the suite cannot run in that environment without adding
+that test dependency. The startup runner still uses `.venv` for the API and
+dashboard.
 
-```bash
-streamlit run dashboard/app.py
+Live verification was run against temporary API/dashboard instances on ports
+8001 and 8502 with a disposable SQLite database: **18 checks passed, 0 failed
+(exit code 0)**. It confirmed a public-read request was blocked by the
+fail-closed classifier gate, a bulk export required review, duplicate request
+IDs returned the recorded decision, unauthenticated review/audit access was
+rejected, and audit output did not expose the synthetic secret marker. The
+verifier created two synthetic events and one pending review in that temporary
+database; the services and temporary database were stopped and removed after
+verification. The normal services on ports 8000 and 8501 remained available.
+
+### Stop services
+
+Run:
+
+```powershell
+.\scripts\stop_zagentshield.bat
 ```
 
-Open `http://localhost:8501` to view real-time metrics, triage pending human-in-the-loop review tickets, inspect redacted audit trails, and simulate policies.
+For safety, the stop script does not kill processes by port, name, or window
+title. Follow its prompt to press Ctrl+C in both titled server terminals; after
+they stop, it removes only the exact temporary SQLite file recorded for that
+runner session. If either port is still listening, it leaves the database
+untouched. Services started manually should also be stopped with Ctrl+C in
+their respective terminals.
 
----
+### Troubleshooting
 
-## Deployment on IBM LinuxONE (s390x)
+- **Port 8000 or 8501 is occupied:** the runner prints the listening PID and
+  exits without stopping anything. Identify the process yourself, stop it if
+  appropriate, and retry.
+- **Python/dependency check fails:** confirm `.venv\Scripts\python.exe` exists
+  or set `ZAGENTSHIELD_PYTHON` to the desired interpreter. Install only into
+  that environment with
+  `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`.
+- **Gateway does not become online:** inspect the Gateway terminal for startup
+  errors and confirm `config\policies.yaml` is present. The runner does not
+  report the service as online unless both `/` identity and `/health` respond.
+- **Dashboard does not become healthy:** inspect the Dashboard terminal and
+  verify the selected Python environment contains Streamlit.
+- **Reviewer endpoints:** `X-Reviewer-Id` is an integration header, not
+  cryptographic authentication. Keep this local demo bound to loopback and
+  behind a trusted authentication/authorization layer before exposing it.
 
-Z-AgentShield supports native build and execution on **IBM LinuxONE (`linux/s390x`)**:
+For expanded endpoint and verification details, see
+[`docs/LOCAL_RUN_AND_VERIFICATION.md`](docs/LOCAL_RUN_AND_VERIFICATION.md).
 
-```bash
-# Build multi-architecture container
-docker buildx build --platform linux/s390x,linux/amd64 -t zagentshield:latest .
+## Limitations and actual deployment status
 
-# Run with docker-compose
-docker-compose up -d
-```
+- No downstream enterprise connector or action-execution bridge is included.
+- The API receives `resource` from the request. No authoritative resource
+  registry/classifier is configured; therefore policy ALLOW results are
+  converted to BLOCK by default. Integrate a trusted, server-controlled
+  classifier before enabling ALLOW.
+- The `X-Reviewer-Id` header is not authentication. Review actions in the
+  dashboard remain read-only until a trusted identity integration is provided.
+- Parameter redaction is heuristic and does not guarantee discovery of
+  arbitrary secrets or personal information. Do not submit real customer data.
+- SQLite records are not cryptographically immutable. The dashboard analytics
+  summarize stored events and do not claim to be a real-time anomaly alert feed.
+- Docker and LinuxONE deployment guides exist, but no IBM LinuxONE deployment,
+  cross-architecture runtime, IBM service integration, or hardware evidence has
+  been verified for this project.
+- Confirm with event organizers whether the project's development history
+  satisfies the official hacking-window rule. Do not rewrite or backdate Git
+  history.
 
-For complete enterprise architecture, mTLS, and IBM Secure Execution setup, see [`docs/PHASE10_LINUXONE_DEPLOYMENT.md`](docs/PHASE10_LINUXONE_DEPLOYMENT.md).
+## License
+
+Project material is offered under the Apache License 2.0; see [LICENSE](LICENSE).
+Third-party packages remain subject to their respective upstream licenses.
+
+See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for an evidence-based demo plan
+and [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md) for remaining
+submission deliverables.

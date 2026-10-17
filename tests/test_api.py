@@ -15,11 +15,12 @@ Security invariants verified:
 """
 
 import sqlite3
+import os
 import unittest
 import warnings
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Suppress the httpx2 starlette deprecation warning (cosmetic; TestClient still works)
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="starlette")
@@ -30,10 +31,11 @@ from fastapi.testclient import TestClient
 from zagentshield.anomalies.detector import AnomalyConfig, AnomalyDetector
 from zagentshield.audit.logger import AuditLogger, AuditLoggingError
 from zagentshield.core.enums import ActionCategory, ActionVerdict, RiskLevel
-from zagentshield.core.models import SecurityEvaluation
+from zagentshield.core.models import AgentRequest, SecurityEvaluation
 from zagentshield.db.database import Database, SCHEMA_SQL
 from zagentshield.db.repository import SecurityRepository
 from zagentshield.policies.engine import PolicyEngine
+from zagentshield.config import get_settings
 
 
 # ---------------------------------------------------------------------------
@@ -135,10 +137,16 @@ def _default_policy_data() -> Dict[str, Any]:
     }
 
 
+def _trusted_test_resource(_request: AgentRequest) -> bool:
+    """Represent an injected trusted resource directory in API tests."""
+    return True
+
+
 def _make_services(
     policy_data: Optional[Dict[str, Any]] = None,
     audit_logger_override=None,
     anomaly_detector_override=None,
+    resource_classifier=_trusted_test_resource,
 ):
     """Build an AppServices graph backed by a shared in-memory SQLite database."""
     from zagentshield.api.app import AppServices
@@ -155,6 +163,7 @@ def _make_services(
         repository=repo,
         audit_logger=audit,
         anomaly_detector=detector,
+        resource_classifier=resource_classifier,
     )
 
 
@@ -235,6 +244,44 @@ class TestHealthEndpoint(unittest.TestCase):
         self.assertIn("docs", data)
         self.assertIn("health", data)
 
+    def test_api_docs_are_available_in_development(self):
+        from zagentshield.api.app import create_app
+
+        with patch.dict(os.environ, {"APP_ENV": "development"}):
+            get_settings.cache_clear()
+            client = TestClient(create_app(services=_make_memory_services()))
+            self.assertEqual(client.get("/docs").status_code, 200)
+            self.assertEqual(client.get("/openapi.json").status_code, 200)
+            self.assertEqual(client.get("/").json()["docs"], "/docs")
+        get_settings.cache_clear()
+
+    def test_api_docs_and_openapi_are_disabled_outside_development(self):
+        from zagentshield.api.app import create_app
+
+        for environment in ("demo", "production"):
+            with self.subTest(environment=environment):
+                with patch.dict(os.environ, {"APP_ENV": environment}):
+                    get_settings.cache_clear()
+                    client = TestClient(create_app(services=_make_memory_services()))
+                    self.assertEqual(client.get("/docs").status_code, 404)
+                    self.assertEqual(client.get("/openapi.json").status_code, 404)
+                    self.assertIsNone(client.get("/").json()["docs"])
+                    self.assertEqual(client.get("/health").status_code, 200)
+        get_settings.cache_clear()
+
+    def test_api_docs_are_disabled_when_environment_is_unset(self):
+        from zagentshield.api.app import create_app
+
+        try:
+            with patch.dict(os.environ, {}, clear=True):
+                get_settings.cache_clear()
+                client = TestClient(create_app(services=_make_memory_services()))
+                self.assertEqual(client.get("/docs").status_code, 404)
+                self.assertEqual(client.get("/openapi.json").status_code, 404)
+                self.assertIsNone(client.get("/").json()["docs"])
+        finally:
+            get_settings.cache_clear()
+
 
 class TestInterceptAllow(unittest.TestCase):
     """POST /api/v1/intercept — ALLOW cases"""
@@ -251,6 +298,59 @@ class TestInterceptAllow(unittest.TestCase):
         self.assertTrue(data["allowed"])
         self.assertFalse(data["review_required"])
         self.assertIsNone(data.get("ticket_id"))
+
+    def test_policy_allow_is_blocked_without_trusted_resource_classifier(self):
+        client = _make_client(_make_services(resource_classifier=None))
+
+        response = client.post(
+            "/api/v1/intercept",
+            json=_allow_body(request_id="req-unclassified-resource"),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["verdict"], "BLOCK")
+        self.assertFalse(response.json()["allowed"])
+        self.assertIn(
+            "Trusted resource classification is not configured",
+            " ".join(response.json()["reasons"]),
+        )
+
+    def test_policy_allow_is_blocked_when_trusted_classifier_rejects_resource(self):
+        client = _make_client(
+            _make_services(resource_classifier=lambda _request: False)
+        )
+
+        response = client.post(
+            "/api/v1/intercept",
+            json=_allow_body(request_id="req-unverified-resource"),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["verdict"], "BLOCK")
+        self.assertFalse(response.json()["allowed"])
+
+    def test_duplicate_allow_is_blocked_when_resource_classifier_is_missing(self):
+        services = _make_services(resource_classifier=None)
+        body = _allow_body(request_id="req-old-allow")
+        services.repository.record_security_event(
+            request_id=body["request_id"],
+            agent_id=body["agent_id"],
+            action=body["action"],
+            category=body["category"],
+            resource=body["resource"],
+            verdict="ALLOW",
+            risk_score=5.0,
+            risk_level="LOW",
+            reasons=["Previously allowed by policy."],
+            matched_rule_ids=["allow-read"],
+        )
+        client = _make_client(services)
+
+        response = client.post("/api/v1/intercept", json=body)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["verdict"], "BLOCK")
+        self.assertFalse(response.json()["allowed"])
 
     def test_allow_response_has_complete_schema(self):
         """ALLOW response contains all required schema fields."""
@@ -786,6 +886,7 @@ def _make_memory_services(
     policy_data: Optional[Dict[str, Any]] = None,
     anomaly_detector: Optional[AnomalyDetector] = None,
     audit_logger_override=None,
+    resource_classifier=_trusted_test_resource,
 ):
     """Build an isolated AppServices graph backed by an in-memory SQLite database."""
     from zagentshield.api.app import AppServices
@@ -805,6 +906,7 @@ def _make_memory_services(
         repository=repo,
         audit_logger=audit,
         anomaly_detector=detector,
+        resource_classifier=resource_classifier,
     )
 
 

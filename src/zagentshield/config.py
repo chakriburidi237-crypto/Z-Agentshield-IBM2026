@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     """Application settings for Z-AgentShield."""
 
     # Application Metadata & Runtime Mode
-    app_env: str = "development"
+    app_env: str = "demo"
     app_name: str = "Z-AgentShield"
     debug: bool = False
     log_level: str = "INFO"

@@ -62,4 +62,5 @@ htmlcov/
 Thumbs.db
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
+scripts/.local_db_path

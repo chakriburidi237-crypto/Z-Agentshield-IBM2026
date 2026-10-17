@@ -104,6 +104,47 @@ class TestDatabaseRepository(unittest.TestCase):
         for ev in allow_events:
             self.assertEqual(ev.verdict, ActionVerdict.ALLOW.value)
 
+    def test_summary_and_filtered_event_pagination(self) -> None:
+        for request_id, verdict, agent_id, timestamp in [
+            ("req-summary-1", "ALLOW", "agent-a", "2026-01-01T00:00:00+00:00"),
+            ("req-summary-2", "BLOCK", "agent-b", "2026-01-02T00:00:00+00:00"),
+            ("req-summary-3", "BLOCK", "agent-a", "2026-01-03T00:00:00+00:00"),
+        ]:
+            self.repo.record_security_event(
+                request_id=request_id,
+                agent_id=agent_id,
+                action="read",
+                category="READ",
+                resource="public/demo",
+                verdict=verdict,
+                risk_score=20.0,
+                risk_level="LOW",
+                reasons=[],
+                matched_rule_ids=[],
+                timestamp=timestamp,
+            )
+
+        summary = self.repo.get_event_summary("2026-01-02T00:00:00+00:00")
+        self.assertEqual(summary["total"], 2)
+        self.assertEqual(summary["block"], 2)
+        self.assertEqual(summary["latest_event_at"], "2026-01-03T00:00:00+00:00")
+        self.assertEqual(
+            self.repo.count_security_events(
+                verdict="BLOCK",
+                agent_id="agent-a",
+                since_iso="2026-01-01T00:00:00+00:00",
+            ),
+            1,
+        )
+        page = self.repo.list_security_events(
+            limit=1,
+            offset=1,
+            verdict="BLOCK",
+            since_iso="2026-01-02T00:00:00+00:00",
+        )
+        self.assertEqual(len(page), 1)
+        self.assertEqual(page[0].request_id, "req-summary-2")
+
     def test_duplicate_event_handling_idempotent(self) -> None:
         """Verify that duplicate request_id does not cause an unhandled exception or duplicate entry."""
         first_insert = self.repo.record_security_event(
@@ -194,6 +235,37 @@ class TestDatabaseRepository(unittest.TestCase):
         # List pending
         pending_list = self.repo.list_pending_reviews()
         self.assertEqual(len(pending_list), 1)
+        self.assertEqual(self.repo.count_pending_reviews(), 1)
+
+    def test_pending_review_filters_and_pagination(self) -> None:
+        for index, agent_id, risk in [
+            (1, "agent-alpha", "HIGH"),
+            (2, "agent-beta", "CRITICAL"),
+            (3, "agent-alpha", "HIGH"),
+        ]:
+            self.repo.create_review_ticket(
+                request_id=f"req-review-page-{index}",
+                agent_id=agent_id,
+                action="export",
+                category="EXPORT",
+                resource="data/demo",
+                risk_score=70.0,
+                risk_level=risk,
+                reasons=["Needs review"],
+            )
+
+        self.assertEqual(
+            self.repo.count_pending_reviews(agent_id="alpha", risk_level="HIGH"),
+            2,
+        )
+        page = self.repo.list_pending_reviews(
+            limit=1,
+            offset=1,
+            agent_id="alpha",
+            risk_level="HIGH",
+        )
+        self.assertEqual(len(page), 1)
+        self.assertEqual(page[0].agent_id, "agent-alpha")
 
     def test_valid_review_status_transitions(self) -> None:
         """Verify valid transitions from PENDING to APPROVED and PENDING to REJECTED."""

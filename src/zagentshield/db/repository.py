@@ -134,27 +134,85 @@ class SecurityRepository:
         limit: int = 50,
         offset: int = 0,
         verdict: Optional[str] = None,
+        since_iso: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> List[SecurityEventRecord]:
-        """List audit events with optional verdict filter and pagination."""
+        """List audit events with filters and bounded pagination."""
+        filters: List[str] = []
+        params: List[Any] = []
         if verdict:
-            sql = """
-            SELECT * FROM security_events
-            WHERE verdict = ?
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?;
-            """
-            params = (verdict, limit, offset)
-        else:
-            sql = """
-            SELECT * FROM security_events
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?;
-            """
-            params = (limit, offset)  # type: ignore[assignment]
+            filters.append("verdict = ?")
+            params.append(verdict)
+        if since_iso:
+            filters.append("timestamp >= ?")
+            params.append(since_iso)
+        if agent_id:
+            filters.append("agent_id LIKE ?")
+            params.append(f"%{agent_id}%")
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+        sql = f"""
+        SELECT * FROM security_events
+        {where_clause}
+        ORDER BY timestamp DESC, id DESC
+        LIMIT ? OFFSET ?;
+        """
+        params.extend((limit, offset))
 
         with self.db.connection() as conn:
-            rows = conn.execute(sql, params).fetchall()
+            rows = conn.execute(sql, tuple(params)).fetchall()
             return [self._row_to_event(r) for r in rows]
+
+    def count_security_events(
+        self,
+        since_iso: Optional[str] = None,
+        verdict: Optional[str] = None,
+        agent_id: Optional[str] = None,
+    ) -> int:
+        """Count persisted events matching the supplied filters."""
+        filters: List[str] = []
+        params: List[Any] = []
+        if since_iso:
+            filters.append("timestamp >= ?")
+            params.append(since_iso)
+        if verdict:
+            filters.append("verdict = ?")
+            params.append(verdict)
+        if agent_id:
+            filters.append("agent_id LIKE ?")
+            params.append(f"%{agent_id}%")
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+        with self.db.connection() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS total FROM security_events {where_clause};",
+                tuple(params),
+            ).fetchone()
+            return int(row["total"])
+
+    def get_event_summary(self, since_iso: Optional[str] = None) -> Dict[str, Any]:
+        """Return exact decision totals and latest timestamp for a time window."""
+        where_clause = "WHERE timestamp >= ?" if since_iso else ""
+        params = (since_iso,) if since_iso else ()
+        sql = f"""
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN verdict = 'ALLOW' THEN 1 ELSE 0 END) AS allow_count,
+            SUM(CASE WHEN verdict = 'REVIEW' THEN 1 ELSE 0 END) AS review_count,
+            SUM(CASE WHEN verdict = 'BLOCK' THEN 1 ELSE 0 END) AS block_count,
+            AVG(risk_score) AS average_risk,
+            MAX(timestamp) AS latest_event_at
+        FROM security_events
+        {where_clause};
+        """
+        with self.db.connection() as conn:
+            row = conn.execute(sql, params).fetchone()
+            return {
+                "total": int(row["total"] or 0),
+                "allow": int(row["allow_count"] or 0),
+                "review": int(row["review_count"] or 0),
+                "block": int(row["block_count"] or 0),
+                "average_risk": row["average_risk"],
+                "latest_event_at": row["latest_event_at"],
+            }
 
     def get_agent_recent_events(
         self,
@@ -260,17 +318,53 @@ class SecurityRepository:
                 return None
             return self._row_to_ticket(row)
 
-    def list_pending_reviews(self, limit: int = 50) -> List[ReviewTicketRecord]:
-        """List all pending review tickets ordered by creation time."""
-        sql = """
+    def list_pending_reviews(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        agent_id: Optional[str] = None,
+        risk_level: Optional[str] = None,
+    ) -> List[ReviewTicketRecord]:
+        """List pending review tickets with filters and bounded pagination."""
+        filters = ["status = 'PENDING'"]
+        params: List[Any] = []
+        if agent_id:
+            filters.append("agent_id LIKE ?")
+            params.append(f"%{agent_id}%")
+        if risk_level:
+            filters.append("risk_level = ?")
+            params.append(risk_level)
+        where_clause = " AND ".join(filters)
+        sql = f"""
         SELECT * FROM review_queue
-        WHERE status = 'PENDING'
+        WHERE {where_clause}
         ORDER BY created_at ASC
-        LIMIT ?;
+        LIMIT ? OFFSET ?;
         """
         with self.db.connection() as conn:
-            rows = conn.execute(sql, (limit,)).fetchall()
+            rows = conn.execute(sql, (*params, limit, offset)).fetchall()
             return [self._row_to_ticket(r) for r in rows]
+
+    def count_pending_reviews(
+        self,
+        agent_id: Optional[str] = None,
+        risk_level: Optional[str] = None,
+    ) -> int:
+        """Count pending review tickets matching optional filters."""
+        filters = ["status = 'PENDING'"]
+        params: List[Any] = []
+        if agent_id:
+            filters.append("agent_id LIKE ?")
+            params.append(f"%{agent_id}%")
+        if risk_level:
+            filters.append("risk_level = ?")
+            params.append(risk_level)
+        with self.db.connection() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS total FROM review_queue WHERE {' AND '.join(filters)};",
+                tuple(params),
+            ).fetchone()
+            return int(row["total"])
 
     def update_review_status(
         self,
