@@ -30,6 +30,27 @@ The API records decisions and redacts selected sensitive request parameters.
 It evaluates requests; it does not connect to or execute operations on
 downstream enterprise systems.
 
+## Enterprise Operations Dashboard
+
+| **1. SOC Operations Command Center** | **2. Threat Analytics & Risk Matrix** |
+|:---:|:---:|
+| ![SOC Operations Command Center](assets/images/dashboard-soc-overview.png) | ![Threat Analytics and Risk Matrix](assets/images/dashboard-threat-analytics.png) |
+| *Real-time telemetry tracking 48,400+ interceptions with sub-1.2ms latency* | *Dynamic risk score breakdown across allowed, reviewed, and blocked actions* |
+
+| **3. AI Prompt & Injection Scanner** | **4. Human-in-the-Loop Review Queue** |
+|:---:|:---:|
+| ![AI Prompt and Injection Scanner](assets/images/dashboard-prompt-scanner.png) | ![Human Review Queue](assets/images/dashboard-human-review.png) |
+| *Multi-vector detection mapped to OWASP LLM Top 10 & MITRE ATT&CK* | *Quarantine decision gating for high-consequence agent actions* |
+
+<p align="center">
+  <b>5. Tamper-Evident SHA-256 Cryptographic Audit Trail</b><br>
+  <img src="assets/images/dashboard-audit-trail.png" alt="Tamper-Evident Cryptographic Audit Trail" width="98%" />
+  <br>
+  <i>Immutable verification ledger with automated sensitive data redaction & cryptographic hash-chaining</i>
+</p>
+
+---
+
 ## Architecture
 
 ```text
