@@ -11,7 +11,7 @@ has been made or that the project satisfies the event rules.
 - [x] Three-minute demo outline: [DEMO_SCRIPT.md](DEMO_SCRIPT.md).
 - [x] Windows local startup guide: [LOCAL_RUN_AND_VERIFICATION.md](LOCAL_RUN_AND_VERIFICATION.md).
 - [x] Source repository URL provided and verified public:
-  <https://github.com/chakriburidi237-crypto/Z--AgentShield-IBM-2026>.
+  <https://github.com/chakriburidi237-crypto/Z-Agentshield-IBM2026>.
   The completed local project has been published to `main`; the starter
   repository history was preserved and merged without rewriting commits.
 - [x] Create and verify source-only ZIP artifact:

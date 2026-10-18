@@ -1,9 +1,9 @@
-# Z-AgentShield (Z--AgentShield-IBM-2026)
+# Z-AgentShield (Z-Agentshield-IBM2026)
 
 **Enterprise AI Security**
 *Let AI act. Keep every action under control.*
 
-**Source repository:** <https://github.com/chakriburidi237-crypto/Z--AgentShield-IBM-2026>
+**Source repository:** <https://github.com/chakriburidi237-crypto/Z-Agentshield-IBM2026>
 
 ---
 
