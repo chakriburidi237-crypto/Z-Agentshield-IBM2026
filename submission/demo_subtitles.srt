@@ -1,0 +1,24 @@
+1
+00:00:00,000 --> 00:00:28,000
+[Introduction & Mission] Welcome to Z-AgentShield, an enterprise AI security gateway engineered for IBM LinuxONE and mission-critical hybrid cloud environments. As autonomous AI agents take real-world actions, Z-AgentShield intercepts every agent request in real time, enforcing mandatory security policies, human-in-the-loop review gating, and tamper-evident audit trails.
+
+2
+00:00:28,500 --> 00:00:58,000
+[SOC Operational Overview] Here in the SOC Overview dashboard, security analysts have full visibility into live agent telemetry. Our showcase displays over 48,000 processed interceptions with a 99.97% service reliability. Interactive charts track request decision trends, threat block ratios, and real-time risk scores with sub-100 millisecond evaluation latency.
+
+3
+00:00:58,500 --> 00:01:28,000
+[Prompt Scanner & Threat Detection] Next is our deterministic Prompt Scanner. It proactively inspects incoming agent prompts and payloads for jailbreaks, direct and indirect prompt injections, and data exfiltration patterns. Every detected threat is automatically classified and mapped against OWASP Top 10 for LLM Applications and MITRE ATT&CK tactics.
+
+4
+00:01:28,500 --> 00:01:58,000
+[Human Review & Decision Gating] High-risk agent actions immediately trigger human-in-the-loop gating. In the Human Review queue, SOC analysts inspect the agent identity, claimed intent, and sensitive parameters. Analysts can approve, reject, or escalate tickets, ensuring that high-consequence operations never execute without explicit human authorization.
+
+5
+00:01:58,500 --> 00:02:28,000
+[Multi-Role RBAC & Governance] Z-AgentShield enforces strict role-based access control. Security Officers operate in dedicated compliance governance mode with read-only inspection to satisfy segregation-of-duties regulations. Platform Admins access host diagnostics, container health, and cryptographic co-processor telemetry, ensuring zero unmonitored privileges.
+
+6
+00:02:28,500 --> 00:02:58,000
+[Cryptographic Audit & LinuxONE Readiness] Finally, our audit subsystem secures every decision with a SHA-256 cryptographic hash chain and automated sensitive data redaction. Built with native LinuxONE s390x multi-arch containers and CPACF hardware acceleration readiness, Z-AgentShield delivers the ultimate trust foundation for enterprise AI. Thank you.
+
