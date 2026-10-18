@@ -24,7 +24,7 @@ external APIs**. All rules are threshold-based and human-auditable.
 | `src/zagentshield/anomalies/detector.py` | Core detector, config, and signal types |
 | `src/zagentshield/anomalies/__init__.py` | Public re-exports |
 | `tests/test_anomaly_detector.py` | 17 unit tests (17/17 pass) |
-| `docs/PHASE6_ANOMALY_DETECTION.md` | This document |
+| `docs/ANOMALY_DETECTION.md` | This document |
 
 **Modified in Phase 6 (backward-compatible):**
 

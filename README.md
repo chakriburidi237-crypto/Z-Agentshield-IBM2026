@@ -96,9 +96,13 @@ Z-AgentShield/
 ├── tests/                    # Unit and integration tests
 ├── config/
 │   └── policies.yaml         # Enterprise security policy definitions
-├── docs/                     # Architecture, demo, local run, and submission guides
+├── docs/                     # Architecture, security review, anomaly detection, LinuxONE guides
+├── submission/               # Pitch deck PDF, 3-min demo MP4 video, and subtitle transcripts
 ├── scripts/
-│   └── seed_demo_data.py     # Synthetic enterprise telemetry generator
+│   ├── run_zagentshield.bat  # Automated startup runner
+│   ├── stop_zagentshield.bat # Safe service teardown
+│   ├── seed_demo_data.py     # Synthetic enterprise telemetry generator
+│   └── verify_zagentshield.py# Full automated verification suite
 ├── Dockerfile                # Multi-arch container image (linux/s390x, amd64, arm64)
 ├── docker-compose.yml        # Multi-service stack (Gateway + Dashboard)
 ├── requirements.txt          # Minimal dependency constraints
@@ -376,15 +380,13 @@ For expanded endpoint and verification details, see
 Project material is offered under the Apache License 2.0; see [LICENSE](LICENSE).
 Third-party packages remain subject to their respective upstream licenses.
 
-## Submission materials
+## Submission Materials
 
-- Pitch deck source: [submission/PITCH_DECK.html](submission/PITCH_DECK.html).
-- Seven-slide PDF draft:
-  [submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck-DRAFT.pdf](submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck-DRAFT.pdf).
-- The PDF is marked as a draft because the event's official file-naming rule
-  and remaining team metadata have not been confirmed.
-- The three-minute recording and verified LinuxONE deployment evidence are
-  not included.
+- **3-Minute Demo Video (1080p MP4):** [submission/Z-AgentShield-Demo.mp4](submission/Z-AgentShield-Demo.mp4)
+  - Features embedded anti-aliased narrative subtitle cards, real-time HUD progress bar, and comprehensive multi-role walkthrough without requiring voiceover.
+- **Pitch Deck Presentation (PDF):** [submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck.pdf](submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck.pdf)
+- **Interactive Pitch Deck (HTML):** [submission/PITCH_DECK.html](submission/PITCH_DECK.html)
+- **Subtitles & Transcripts:** [submission/demo_subtitles.srt](submission/demo_subtitles.srt) | [submission/demo_subtitles.vtt](submission/demo_subtitles.vtt)
 
 See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for an evidence-based demo plan
 and [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md) for remaining

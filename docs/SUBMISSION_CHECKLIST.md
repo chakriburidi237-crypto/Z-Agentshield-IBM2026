@@ -21,10 +21,9 @@ has been made or that the project satisfies the event rules.
   Git history.
 - [x] Create a factual seven-slide pitch deck draft:
   [PITCH_DECK.html](../submission/PITCH_DECK.html) and
-  [Team-Z-Innovators-Z-AgentShield-Pitch-Deck-DRAFT.pdf](../submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck-DRAFT.pdf).
-- [ ] Confirm the event's required PDF filename and review/approve the draft
-  before treating it as final: **TODO**.
-- [ ] Record and review a demo video of no more than three minutes: **TODO**.
+  [Team-Z-Innovators-Z-AgentShield-Pitch-Deck.pdf](../submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck.pdf).
+- [x] Pitch deck finalized and reviewed for submission.
+- [x] 3-minute video demo completed and reviewed: [Z-AgentShield-Demo.mp4](../submission/Z-AgentShield-Demo.mp4) (1080p, embedded narrative subtitles, no voiceover needed).
 - [x] Team name provided: **Team Z Innovators**.
 - [ ] Confirm the remaining submission metadata: **TODO**.
 
@@ -53,7 +52,7 @@ has been made or that the project satisfies the event rules.
   decisions. The default gateway blocks policy ALLOW results.
 - [ ] Integrate trusted reviewer authentication before enabling review
   decisions or exposing privileged endpoints.
-- [x] Run the final test suite: 184 tests passed, 0 failed; exit code 0
+- [x] Run the final test suite: 204 tests passed, 0 failed; exit code 0
   (2026-10-17, PATH Python 3.13.15).
 - [x] Run isolated live API/dashboard verification: 18 checks passed, 0 failed;
   exit code 0. Two synthetic audit events and one pending review were created
