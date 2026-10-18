@@ -48,6 +48,18 @@ WINDOWS = {
     "30 days": timedelta(days=30),
     "All history": None,
 }
+ROLE_LABELS = {
+    "SOC_ANALYST": "SOC Analyst",
+    "SECURITY_OFFICER": "Security Officer",
+    "PLATFORM_ADMIN": "Platform Admin",
+    "SECURITY_ADMIN": "Security Admin",
+}
+ROLE_CAPABILITIES = {
+    "SOC_ANALYST": "Full telemetry · Review queue actions · Simulation runner",
+    "SECURITY_OFFICER": "Audit logging · Threat matrix inspection · Policy reviews",
+    "PLATFORM_ADMIN": "Administrative configuration · System diagnostics",
+    "SECURITY_ADMIN": "Full security administration & policy enforcement",
+}
 
 st.set_page_config(
     page_title="Z-AgentShield | Enterprise SOC Dashboard",
@@ -770,17 +782,60 @@ with st.sidebar:
     st.subheader("Reviewer sign-in")
     auth_token = st.session_state.get("gateway_access_token")
     auth_role = st.session_state.get("gateway_auth_role")
-    auth_username = st.session_state.get("gateway_auth_username", "SOC Analyst")
+    auth_username = st.session_state.get("gateway_auth_username", "Guest" if not auth_token else "SOC Analyst")
     if auth_token:
-        st.success(f"✅ Signed in as **{auth_username}** ({auth_role})", icon=None)
-        if st.button("Sign out", key="reviewer_sign_out", icon=":material/logout:"):
+        role_title = ROLE_LABELS.get(auth_role, auth_role)
+        role_cap = ROLE_CAPABILITIES.get(auth_role, "Operational Access")
+        st.markdown(
+            f"""
+            <div style="background:{card_bg};border:1.5px solid #00d2ff;border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                    <span style="font-size:16px;">👤</span>
+                    <div>
+                        <div style="font-size:14px;font-weight:700;color:{text_primary};">{auth_username}</div>
+                        <div style="font-size:11px;font-weight:600;color:#38bdf8;">{role_title}</div>
+                    </div>
+                </div>
+                <div style="font-size:10.5px;color:{text_secondary};line-height:1.3;margin-top:4px;">
+                    <strong>Access:</strong> {role_cap}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Sign out", key="reviewer_sign_out", icon=":material/logout:", use_container_width=True):
             st.session_state.pop("gateway_access_token", None)
             st.session_state.pop("gateway_auth_role", None)
             st.session_state.pop("gateway_auth_username", None)
             st.rerun()
     else:
+        st.caption("Quick Single-Click Demo Sign-in:")
+        q1, q2, q3 = st.columns(3)
+        if q1.button("🛡️ SOC", key="btn_quick_soc", help="Sign in as SOC Analyst (Full telemetry, reviews, simulation runner)"):
+            if _auth_manager and _auth_manager.configured:
+                _token, _user = _auth_manager.login("soc_analyst", "AgentShield2026!")
+                st.session_state["gateway_access_token"] = _token
+                st.session_state["gateway_auth_role"] = _user.role
+                st.session_state["gateway_auth_username"] = _user.username
+                st.rerun()
+        if q2.button("🔍 Officer", key="btn_quick_sec", help="Sign in as Security Officer (Audit logging, threat matrix, policy reviews)"):
+            if _auth_manager and _auth_manager.configured:
+                _token, _user = _auth_manager.login("sec_officer", "OfficerShield2026!")
+                st.session_state["gateway_access_token"] = _token
+                st.session_state["gateway_auth_role"] = _user.role
+                st.session_state["gateway_auth_username"] = _user.username
+                st.rerun()
+        if q3.button("⚙️ Admin", key="btn_quick_adm", help="Sign in as Platform Admin (Configuration & system diagnostics)"):
+            if _auth_manager and _auth_manager.configured:
+                _token, _user = _auth_manager.login("admin", "AdminShield2026!")
+                st.session_state["gateway_access_token"] = _token
+                st.session_state["gateway_auth_role"] = _user.role
+                st.session_state["gateway_auth_username"] = _user.username
+                st.rerun()
+
+        st.caption("— or enter credentials —")
         with st.form("reviewer_login", clear_on_submit=False):
-            login_username = st.text_input("Username", max_chars=128, placeholder="soc_analyst")
+            login_username = st.text_input("Username", max_chars=128, placeholder="soc_analyst / sec_officer / admin")
             login_password = st.text_input("Password", type="password", max_chars=1024, placeholder="••••••••")
             login_submitted = st.form_submit_button("Sign in", use_container_width=True)
         if login_submitted:
@@ -822,7 +877,7 @@ with st.sidebar:
                 st.rerun()
     auth_token = st.session_state.get("gateway_access_token")
     auth_role = st.session_state.get("gateway_auth_role")
-    auth_username = st.session_state.get("gateway_auth_username", "SOC Analyst")
+    auth_username = st.session_state.get("gateway_auth_username", "Guest" if not auth_token else "SOC Analyst")
     auth_headers = {
         "Authorization": f"Bearer {auth_token}",
         "X-Reviewer-Id": auth_username,
@@ -899,10 +954,10 @@ st.markdown(
             <span>Datathon 2026</span>
         </div>
         <div class="analyst-profile">
-            <div class="analyst-avatar">👤</div>
+            <div class="analyst-avatar">{"🛡️" if auth_role == "SOC_ANALYST" else ("🔍" if auth_role == "SECURITY_OFFICER" else ("⚙️" if auth_role == "PLATFORM_ADMIN" else "👤"))}</div>
             <div>
-                <div class="analyst-name">{auth_username}</div>
-                <div class="analyst-role">{auth_role if auth_role else "Guest"}</div>
+                <div class="analyst-name">{auth_username if auth_token else "Guest Analyst"}</div>
+                <div class="analyst-role">{ROLE_LABELS.get(auth_role, auth_role) if auth_role else "Unauthenticated (View Only)"}</div>
             </div>
         </div>
     </div>
@@ -1494,8 +1549,17 @@ elif section == "Human review":
     st.subheader("Human review queue")
     st.caption("Source: authenticated gateway API and persisted review tickets.")
     if not auth_token:
-        st.info("Sign in with a configured SOC Analyst or Security Admin account to access the review queue.")
+        st.info("Sign in with a configured SOC Analyst, Security Officer, or Platform Admin account to access the review queue.")
     else:
+        role_label = ROLE_LABELS.get(auth_role, auth_role)
+        can_decide = auth_role in ("SOC_ANALYST", "SECURITY_ADMIN")
+        if auth_role == "SECURITY_OFFICER":
+            st.info("🔍 Security Officer Governance Mode: Review tickets are available in read-only audit mode for compliance oversight. Decision approvals/rejections are reserved for SOC Analysts.")
+        elif auth_role == "PLATFORM_ADMIN":
+            st.info("⚙️ Platform Admin Scope: Alert triage and decision actions are operational security workflows handled by SOC Analysts. Platform Admins oversee infrastructure and platform health.")
+        else:
+            st.success(f"🛡️ {role_label} Operational Access: Full review queue triage, approval, and rejection capabilities active.")
+
         filter_columns = st.columns(2)
         agent_filter = filter_columns[0].text_input("Filter by agent ID", key="review_agent_filter")
         risk_filter = filter_columns[1].selectbox(
@@ -1543,41 +1607,53 @@ elif section == "Human review":
                 st.write("**Decision reasons:**")
                 for reason in ticket.get("reasons", []):
                     st.write(f"- {display_text(reason)}")
-                with st.form(f"review_decision_{ticket['ticket_id']}"):
-                    notes = st.text_area("Reviewer notes (optional)", max_chars=2048)
-                    action_columns = st.columns(2)
-                    approve = action_columns[0].form_submit_button("Approve", type="primary")
-                    reject = action_columns[1].form_submit_button("Reject")
-                if approve or reject:
-                    decision_val = "APPROVED" if approve else "REJECTED"
-                    success = False
-                    try:
-                        decision_response = requests.post(
-                            f"{gateway_url}/api/v1/reviews/{ticket['ticket_id']}/decision",
-                            headers=auth_headers,
-                            json={"decision": decision_val, "reviewer_notes": notes},
-                            timeout=net_timeout,
-                        )
-                        if decision_response.status_code == 200:
-                            success = True
-                    except requests.RequestException:
-                        pass
-
-                    if not success:
+                if can_decide:
+                    with st.form(f"review_decision_{ticket['ticket_id']}"):
+                        notes = st.text_area("Reviewer notes (optional)", max_chars=2048)
+                        action_columns = st.columns(2)
+                        approve = action_columns[0].form_submit_button("Approve", type="primary")
+                        reject = action_columns[1].form_submit_button("Reject")
+                    if approve or reject:
+                        decision_val = "APPROVED" if approve else "REJECTED"
+                        success = False
                         try:
-                            repository.update_review_status(
-                                ticket_id=ticket["ticket_id"],
-                                new_status=decision_val,
-                                reviewer_id=auth_username or "soc_analyst",
-                                reviewer_notes=redact_sensitive_data(notes),
+                            decision_response = requests.post(
+                                f"{gateway_url}/api/v1/reviews/{ticket['ticket_id']}/decision",
+                                headers=auth_headers,
+                                json={"decision": decision_val, "reviewer_notes": notes},
+                                timeout=net_timeout,
                             )
-                            success = True
-                        except Exception as update_err:
-                            st.error(f"Review recording failed: {update_err}")
+                            if decision_response.status_code == 200:
+                                success = True
+                        except requests.RequestException:
+                            pass
 
-                    if success:
-                        st.success(f"Ticket {ticket['ticket_id']} successfully {decision_val.lower()} and audit recorded.")
-                        st.rerun()
+                        if not success:
+                            try:
+                                repository.update_review_status(
+                                    ticket_id=ticket["ticket_id"],
+                                    new_status=decision_val,
+                                    reviewer_id=auth_username or "soc_analyst",
+                                    reviewer_notes=redact_sensitive_data(notes),
+                                )
+                                success = True
+                            except Exception as update_err:
+                                st.error(f"Review recording failed: {update_err}")
+
+                        if success:
+                            st.success(f"Ticket {ticket['ticket_id']} successfully {decision_val.lower()} and audit recorded.")
+                            st.rerun()
+                else:
+                    st.markdown(
+                        f"""
+                        <div style="background:{btn_secondary_bg};border:1px dashed {card_border};border-radius:6px;padding:8px 12px;margin-top:8px;">
+                            <span style="font-size:12px;color:{text_secondary};font-weight:600;">
+                                🔒 Decision actions disabled ({role_label} view-only inspection mode).
+                            </span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
 # ---------------------------------------------------------------------------
 # SECTION 3: AUDIT TRAIL
@@ -1588,6 +1664,10 @@ elif section == "Audit trail":
     if not auth_token:
         st.info("Sign in with a configured reviewer account to access audit records.")
     else:
+        if auth_role == "SECURITY_OFFICER":
+            st.success("🔍 Security Officer Assurance: Verifying immutable cryptographic audit logs and event ledgers.")
+        elif auth_role == "PLATFORM_ADMIN":
+            st.info("⚙️ Platform Admin: Platform audit log stream and event persistence verification.")
         controls = st.columns(3)
         audit_window_label = controls[0].selectbox(
             "Time window",
@@ -1708,6 +1788,10 @@ elif section == "Behavioral analytics":
 elif section == "Policy simulator":
     st.subheader("Policy simulator")
     st.caption("Policy-only preview. Inputs are untrusted, previews are not persisted.")
+    if auth_role == "SECURITY_OFFICER":
+        st.info("🔍 Security Officer Policy Review: Evaluating policy rule sets, regex boundaries, and risk thresholds.")
+    elif auth_role == "PLATFORM_ADMIN":
+        st.info("⚙️ Platform Admin: Engine configuration verification mode.")
     with st.form("simulation_form"):
         left, right = st.columns(2)
         with left:
@@ -1882,7 +1966,18 @@ elif section == "Attack simulation":
         st.markdown(f"**Description:** {selected_sc.get('description', '')}")
         st.markdown(f"**Target Agent:** `{selected_sc.get('agent_id', '')}` · **Action:** `{selected_sc.get('action', '')}` · **Resource:** `{selected_sc.get('resource', '')}`")
 
-    if st.button("Run synthetic scenario through gateway", type="primary"):
+    role_can_simulate = (auth_role in ("SOC_ANALYST", "SECURITY_ADMIN")) or (not auth_token)
+    if auth_role == "SECURITY_OFFICER":
+        st.warning("🔒 Role Limitation: Synthetic attack execution is restricted to SOC Analysts and authorized security operators. Security Officers maintain oversight through the Audit Trail and Behavioral Analytics.")
+    elif auth_role == "PLATFORM_ADMIN":
+        st.warning("⚙️ Platform Boundary: Direct adversary attack simulation is restricted to SOC Analysts. System diagnostics and service telemetry are available under System Telemetry.")
+
+    if st.button(
+        "Run synthetic scenario through gateway",
+        type="primary",
+        disabled=not role_can_simulate,
+        help="Restricted to SOC Analysts" if not role_can_simulate else "Run synthetic scenario through gateway",
+    ):
         simulation_request = build_simulation_request(scenario_key)
         try:
             simulation_response = requests.post(f"{gateway_url}/api/v1/intercept", json=simulation_request, timeout=net_timeout)
@@ -2129,6 +2224,8 @@ elif section == "Agent blast radius":
 elif section == "System telemetry":
     st.subheader("Measured gateway and host telemetry")
     st.caption("Real-time host runtime, IBM LinuxONE hardware acceleration, and security gateway performance.")
+    if auth_role == "PLATFORM_ADMIN":
+        st.success("⚙️ Platform Admin Console: System diagnostics, host platform metrics, and cryptographic coprocessor monitors active.")
 
     # Try live gateway telemetry
     t_data = None

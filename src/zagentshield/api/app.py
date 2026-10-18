@@ -208,8 +208,8 @@ def require_authenticated_user(
 def require_review_access(
     user: AuthenticatedUser = Depends(require_authenticated_user),
 ) -> AuthenticatedUser:
-    """Authorize only configured SOC analyst and security admin roles."""
-    if user.role not in {"SOC_ANALYST", "SECURITY_ADMIN"}:
+    """Authorize configured reviewer and administrator roles."""
+    if user.role not in {"SOC_ANALYST", "SECURITY_ADMIN", "SECURITY_OFFICER", "PLATFORM_ADMIN"}:
         raise HTTPException(status_code=403, detail={"error": "Insufficient role.", "code": "FORBIDDEN"})
     return user
 
@@ -696,6 +696,15 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"error": "Invalid ticket_id.", "code": "INVALID_TICKET_ID"},
+            )
+
+        if user.role not in ("SOC_ANALYST", "SECURITY_ADMIN"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": "Review decision actions are restricted to SOC Analyst and Security Admin roles.",
+                    "code": "FORBIDDEN",
+                },
             )
 
         # Validate the decision value before touching the DB
