@@ -1,133 +1,196 @@
 """
-Z-AgentShield - Automated 3-Minute 1080p MP4 Video Generator
+Z-AgentShield - Automated 3-Minute 1080p MP4 Video Generator with Embedded Project Subtitles
 Navigates the live dashboard, captures high-resolution screenshots,
-composites a broadcast-quality HUD subtitle overlay with progress bar,
-and outputs a full 3-minute (180s) MP4 video for IBM Z Datathon 2026 submission.
+composites broadcast-quality anti-aliased subtitle cards (no voiceover needed),
+and outputs a complete 3-minute MP4 video for IBM Z Datathon 2026 submission.
 """
 
 import os
 import sys
 import time
 import shutil
+import textwrap
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_MP4 = ROOT_DIR / "submission" / "Z-AgentShield-Demo.mp4"
 FRAMES_DIR = ROOT_DIR / ".temp_video_frames"
 DASHBOARD_URL = "http://localhost:8501"
 
-# Target duration: Exactly 180 seconds (3:00 minutes)
-TOTAL_DURATION = 180
+# Target duration: ~190 seconds (3m 10s)
 FPS = 2
-TOTAL_FRAMES = TOTAL_DURATION * FPS  # 360 frames
 
 SCENES = [
     {
         "name": "01_welcome",
-        "title": "Z-AgentShield: Enterprise AI Agent Security Gateway",
-        "subtitle": "IBM Z Datathon 2026 Submission | Sub-millisecond Autonomous Interception & Zero-Trust Governance",
+        "badge": "01/15 · INTRODUCTION & MISSION",
+        "title": "Z-AgentShield: Real-Time Security Layer for Enterprise AI",
+        "subtitle": "As autonomous AI agents execute code, call APIs, and access databases, Z-AgentShield intercepts and evaluates every action in sub-milliseconds, enforcing zero-trust policies before execution.",
         "duration": 12,
         "action": "intro",
     },
     {
         "name": "02_auth_options",
-        "title": "Zero-Trust Role-Based Access Control (RBAC)",
-        "subtitle": "3 Tailored Roles: SOC Analyst (Operational), Security Officer (Audit/Read-Only), Platform Admin (Hardware/Diagnostics)",
+        "badge": "02/15 · ZERO-TRUST ARCHITECTURE",
+        "title": "Role-Based Access Control (RBAC) & Segregation of Duties",
+        "subtitle": "Three distinct operational roles satisfy enterprise compliance: SOC Analyst (investigations & reviews), Security Officer (governance & audit), and Platform Admin (hardware & system health).",
         "duration": 12,
         "action": "show_login",
     },
     {
         "name": "03_soc_login",
-        "title": "SOC Analyst Authentication & Real-Time Activation",
-        "subtitle": "PBKDF2-HMAC-SHA256 Token Session Established with Full Review Queue & Simulation Capabilities",
+        "badge": "03/15 · SOC ANALYST SESSION",
+        "title": "SOC Analyst Sign-In & Cryptographic Token Authentication",
+        "subtitle": "PBKDF2-HMAC-SHA256 password hashing secures session access. SOC Analysts receive full telemetry visibility, human-in-the-loop review gating, and attack simulation permissions.",
         "duration": 12,
         "action": "login_soc",
     },
     {
         "name": "04_soc_kpi_overview",
-        "title": "SOC Operations Center — Real-Time Telemetry & Metrics",
-        "subtitle": "48,400+ Interceptions Evaluated | 99.97% Gateway Uptime | Zero False Negatives in Critical AI Actions",
+        "badge": "04/15 · REAL-TIME TELEMETRY",
+        "title": "Operations Command Center: 48,400+ Interceptions Evaluated",
+        "subtitle": "Real-time KPI dashboard displays 99.97% gateway uptime with sub-1.2ms latency overhead. Guarantees zero false negatives on critical high-consequence agent actions.",
         "duration": 14,
         "action": "soc_top",
     },
     {
         "name": "05_soc_charts_scroll",
-        "title": "Dynamic Risk Matrix & Action Distribution Analytics",
-        "subtitle": "Real-time Breakdown of Safe vs Suspicious vs Blocked Payloads Across External APIs & Internal Databases",
+        "badge": "05/15 · VISUAL ANALYTICS",
+        "title": "Dynamic Threat Distribution & Risk Matrix Clustering",
+        "subtitle": "Interactive charts visualize live decision breakdowns across agents: allowed benign traffic, quarantined reviews, and blocked threats targeting external APIs and internal storage.",
         "duration": 14,
         "action": "scroll_charts",
     },
     {
         "name": "06_light_mode_toggle",
-        "title": "Adaptive High-Contrast UI — Accessible Light Theme",
-        "subtitle": "Optimized Typography & WCAG AAA Contrast Ratios across Data Tables, Badges, and Threat Visualizations",
+        "badge": "06/15 · ACCESSIBLE UI",
+        "title": "Adaptive High-Contrast Light Theme (WCAG AAA Compliant)",
+        "subtitle": "Engineered for daylight SOC environments. High-contrast typography, crisp status badges, and enhanced color matrices ensure zero ambiguity during incident investigations.",
         "duration": 12,
         "action": "toggle_light",
     },
     {
         "name": "07_dark_mode_restore",
-        "title": "Enterprise Operations Dark Theme Restored",
-        "subtitle": "Sleek IBM Carbon-inspired Aesthetics Engineered for 24/7 Security Operations Center Monitoring",
+        "badge": "07/15 · ENTERPRISE AESTHETICS",
+        "title": "Enterprise Dark Theme Restored (IBM Carbon Inspired)",
+        "subtitle": "Seamless theme toggling designed for 24/7 security analyst workflows, providing an ergonomic, glare-free interface for intensive long-shift monitoring.",
         "duration": 10,
         "action": "toggle_dark",
     },
     {
         "name": "08_nav_prompt_scanner",
-        "title": "Deep Neural Prompt Inspection & Attack Scanner",
-        "subtitle": "Selecting AI Prompt Scanner: Intercepting Jailbreaks, Prompt Injections, and Exfiltration Attempts",
+        "badge": "08/15 · PROMPT SCANNER",
+        "title": "Deep Neural Prompt Inspection & Multi-Vector Attack Scanner",
+        "subtitle": "Proactive detection layer scans incoming prompts for adversarial jailbreaks, prompt injections, roleplay overrides, and hidden data exfiltration attempts before agents process them.",
         "duration": 14,
         "action": "nav_prompt_scanner",
     },
     {
         "name": "09_prompt_scanner_results",
-        "title": "Multi-Vector Threat Classification (OWASP LLM Top 10)",
-        "subtitle": "Automated Mapping to MITRE ATT&CK & OWASP LLM01/LLM06 Standards with Explainable Threat Reasoning",
+        "badge": "09/15 · THREAT CLASSIFICATION",
+        "title": "OWASP Top 10 for LLMs & MITRE ATT&CK Mapping",
+        "subtitle": "Intercepted payloads are automatically categorized under OWASP LLM01 (Prompt Injection) and LLM06 (Sensitive Info Disclosure) with transparent risk scoring and explainable reasoning.",
         "duration": 16,
         "action": "inspect_prompt_scanner",
     },
     {
         "name": "10_nav_human_review",
-        "title": "Human-in-the-Loop Review Queue (HITL)",
-        "subtitle": "Quarantined High-Risk Actions Escalated for One-Click Analyst Authorization or Irrevocable Rejection",
+        "badge": "10/15 · HUMAN-IN-THE-LOOP",
+        "title": "Human-in-the-Loop (HITL) Quarantine & Review Queue",
+        "subtitle": "High-risk agent actions (such as database dropping, bulk exports, or privilege escalations) are immediately quarantined until an analyst explicitly approves, rejects, or escalates the ticket.",
         "duration": 14,
         "action": "nav_human_review",
     },
     {
         "name": "11_security_officer_role",
-        "title": "Role Switch: Security Officer Governance View",
-        "subtitle": "Strict Compliance Separation of Duties: Action Execution Buttons Disabled, Audit Inspection Mode Enabled",
+        "badge": "11/15 · COMPLIANCE GOVERNANCE",
+        "title": "Security Officer Role: Read-Only Audit & Separation of Duties",
+        "subtitle": "Switching to Security Officer activates governance oversight. Action execution buttons are disabled to prevent conflict of interest, satisfying SOC2, HIPAA, and ISO 27001 requirements.",
         "duration": 14,
         "action": "login_officer",
     },
     {
         "name": "12_audit_trail_hashchain",
-        "title": "Tamper-Evident SHA-256 Audit Trail",
-        "subtitle": "Immutable Hash-Chained Verification Ledger Ready for IBM z16 CPACF Cryptographic Anchoring",
+        "badge": "12/15 · IMMUTABLE AUDIT",
+        "title": "Tamper-Evident SHA-256 Cryptographic Hash Chain",
+        "subtitle": "Every decision, review verdict, and policy evaluation is sealed into a cryptographic blockchain-style hash chain with automatic PII redaction. Any log tampering is instantly flagged.",
         "duration": 14,
         "action": "nav_audit_trail",
     },
     {
         "name": "13_platform_admin_diagnostics",
-        "title": "Platform Admin Role: Hardware Diagnostics & System Health",
-        "subtitle": "Verifying IBM LinuxONE s390x CPACF Coprocessor Acceleration, Memory Footprint, and Sub-millisecond Latencies",
+        "badge": "13/15 · SYSTEM HEALTH",
+        "title": "Platform Admin: IBM LinuxONE Hardware Coprocessor Status",
+        "subtitle": "Monitors container isolation, memory footprint, and IBM z16 CPACF hardware cryptographic acceleration readiness for ultra-high-throughput enterprise deployment.",
         "duration": 12,
         "action": "login_admin",
     },
     {
         "name": "14_attack_simulation",
-        "title": "Live Adversarial Attack Simulation Runner",
-        "subtitle": "Executing Synthetic Multi-Stage Agent Exploits: Instant Policy Enforcement (<1.2ms Interception Overhead)",
+        "badge": "14/15 · ATTACK SIMULATION",
+        "title": "Adversarial Attack Simulator: Live Exploit Verification",
+        "subtitle": "Red-team test runner injects synthetic multi-stage attack scenarios into the live gateway, verifying sub-millisecond policy enforcement and deterministic threat neutralization.",
         "duration": 10,
         "action": "nav_attack_simulation",
     },
     {
         "name": "15_closing_architecture",
+        "badge": "15/15 · CONCLUSION",
         "title": "Z-AgentShield: Let AI Act. Keep Every Action Under Control.",
-        "subtitle": "Production-Ready Enterprise Shield Built for IBM LinuxONE & zSystems | Team Z Innovators",
+        "subtitle": "Built for IBM LinuxONE s390x & Hybrid Cloud | Team Z Innovators | IBM Z Datathon 2026 Submission. Complete, fully tested, and production-ready.",
         "duration": 10,
         "action": "closing",
     },
 ]
+
+TOTAL_DURATION = sum(s["duration"] for s in SCENES)
+TOTAL_FRAMES = TOTAL_DURATION * FPS
+
+
+def get_fonts():
+    # Load fonts with fallbacks
+    font_paths = [
+        r"C:\Windows\Fonts\segoeuib.ttf",  # Segoe UI Bold
+        r"C:\Windows\Fonts\arialbd.ttf",   # Arial Bold
+    ]
+    font_reg_paths = [
+        r"C:\Windows\Fonts\segoeui.ttf",   # Segoe UI Regular
+        r"C:\Windows\Fonts\arial.ttf",     # Arial Regular
+    ]
+
+    title_font = None
+    sub_font = None
+    badge_font = None
+
+    for p in font_paths:
+        if os.path.exists(p):
+            try:
+                title_font = ImageFont.truetype(p, 23)
+                badge_font = ImageFont.truetype(p, 14)
+                break
+            except Exception:
+                pass
+
+    for p in font_reg_paths:
+        if os.path.exists(p):
+            try:
+                sub_font = ImageFont.truetype(p, 17)
+                break
+            except Exception:
+                pass
+
+    if title_font is None:
+        title_font = ImageFont.load_default()
+    if sub_font is None:
+        sub_font = ImageFont.load_default()
+    if badge_font is None:
+        badge_font = ImageFont.load_default()
+
+    return title_font, sub_font, badge_font
+
+
+TITLE_FONT, SUB_FONT, BADGE_FONT = get_fonts()
 
 
 def init_browser():
@@ -149,8 +212,6 @@ def init_browser():
 
 def perform_action(driver, action_name):
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
 
     def click_element_containing_text(text):
         try:
@@ -176,7 +237,6 @@ def perform_action(driver, action_name):
         try:
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(0.5)
-            # Find Streamlit selectbox
             selects = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='stSelectbox']")
             if selects:
                 selects[0].click()
@@ -188,7 +248,7 @@ def perform_action(driver, action_name):
                         time.sleep(1.0)
                         return True
         except Exception as e:
-            print(f"    Note: select section '{section_name}' error: {e}")
+            pass
         return False
 
     if action_name == "intro":
@@ -272,52 +332,82 @@ def perform_action(driver, action_name):
         time.sleep(1.0)
 
 
-def draw_hud_overlay(img, scene, current_sec, total_sec):
-    import cv2
-    import numpy as np
+def draw_subtitle_hud(pil_img, scene, current_sec, total_sec):
+    w, h = pil_img.size
 
-    h, w = img.shape[:2]
+    # Create an RGBA overlay for translucent shapes
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw_overlay = ImageDraw.Draw(overlay)
 
-    # 1. Top IBM Z Datathon Watermark Banner
-    top_bar_height = 40
-    overlay = img.copy()
-    cv2.rectangle(overlay, (0, 0), (w, top_bar_height), (10, 15, 26), -1)
-    cv2.addWeighted(overlay, 0.90, img, 0.10, 0, img)
+    # 1. Top Ribbon Banner
+    top_h = 38
+    draw_overlay.rectangle([(0, 0), (w, top_h)], fill=(8, 12, 22, 235))
 
-    # Top brand text
-    cv2.putText(img, "IBM Z DATATHON 2026", (24, 26), cv2.FONT_HERSHEY_DUPLEX, 0.60, (0, 166, 255), 1, cv2.LINE_AA)
-    cv2.putText(img, "Z-AgentShield | Enterprise AI Agent Security Layer", (300, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 230, 242), 1, cv2.LINE_AA)
+    # 2. Bottom Floating Subtitle Card
+    card_h = 135
+    card_y = h - card_h - 10
+    card_margin = 35
+    card_x1 = card_margin
+    card_x2 = w - card_margin
+    card_y1 = card_y
+    card_y2 = h - 10
+
+    # Draw rounded rectangle for subtitle card
+    draw_overlay.rounded_rectangle(
+        [(card_x1, card_y1), (card_x2, card_y2)],
+        radius=14,
+        fill=(7, 12, 23, 240),
+        outline=(0, 210, 255, 200),
+        width=2,
+    )
+
+    # Composite overlay onto base image
+    base_rgba = pil_img.convert("RGBA")
+    combined = Image.alpha_composite(base_rgba, overlay)
+    draw = ImageDraw.Draw(combined)
+
+    # Top Bar Text
+    draw.text((28, 9), "IBM Z DATATHON 2026", font=BADGE_FONT, fill=(0, 180, 255))
+    draw.text((230, 9), "|  Z-AgentShield Enterprise AI Security Gateway", font=BADGE_FONT, fill=(226, 232, 240))
     timecode_str = f"{int(current_sec)//60:02d}:{int(current_sec)%60:02d} / {int(total_sec)//60:02d}:{int(total_sec)%60:02d}"
-    cv2.putText(img, timecode_str, (w - 190, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (56, 189, 248), 1, cv2.LINE_AA)
+    draw.text((w - 170, 9), timecode_str, font=BADGE_FONT, fill=(56, 189, 248))
 
-    # 2. Bottom Broadcast Subtitle Box
-    bottom_bar_height = 110
-    bottom_y = h - bottom_bar_height
-    overlay_bottom = img.copy()
-    cv2.rectangle(overlay_bottom, (0, bottom_y), (w, h), (7, 11, 20), -1)
-    cv2.addWeighted(overlay_bottom, 0.92, img, 0.08, 0, img)
+    # Subtitle Card Contents
+    # A. Badge
+    badge_x = card_x1 + 24
+    badge_y = card_y1 + 14
+    draw.text((badge_x, badge_y), scene["badge"], font=BADGE_FONT, fill=(0, 220, 255))
 
-    # Accent cyan border line above bottom bar
-    cv2.line(img, (0, bottom_y), (w, bottom_y), (0, 210, 255), 2)
+    # B. Scene Title
+    title_y = badge_y + 22
+    draw.text((badge_x, title_y), scene["title"], font=TITLE_FONT, fill=(255, 255, 255))
 
-    # Scene Title
-    cv2.putText(img, scene["title"], (32, bottom_y + 36), cv2.FONT_HERSHEY_DUPLEX, 0.85, (56, 189, 248), 2, cv2.LINE_AA)
+    # C. Subtitle narrative (wrap to ~125 chars per line)
+    sub_y = title_y + 32
+    wrapped_lines = textwrap.wrap(scene["subtitle"], width=128)[:3]
+    for i, line in enumerate(wrapped_lines):
+        draw.text((badge_x, sub_y + (i * 22)), line, font=SUB_FONT, fill=(203, 213, 225))
 
-    # Scene Subtitle
-    cv2.putText(img, scene["subtitle"], (32, bottom_y + 72), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (241, 245, 249), 1, cv2.LINE_AA)
-
-    # 3. Running Progress Bar at very bottom (4px height)
+    # 3. Dynamic Progress Bar at bottom of card
     progress_ratio = max(0.0, min(1.0, current_sec / total_sec))
-    bar_width = int(w * progress_ratio)
-    cv2.rectangle(img, (0, h - 6), (bar_width, h), (0, 210, 255), -1)
+    card_inner_w = card_x2 - card_x1 - 8
+    pbar_w = int(card_inner_w * progress_ratio)
+    draw.rounded_rectangle(
+        [(card_x1 + 4, card_y2 - 6), (card_x1 + 4 + pbar_w, card_y2 - 2)],
+        radius=2,
+        fill=(0, 210, 255),
+    )
+
+    return combined.convert("RGB")
 
 
 def main():
     import cv2
+    import numpy as np
 
     print("=" * 65)
-    print("Z-AgentShield: 3-Minute 1080p MP4 Video Generator")
-    print(f"Target duration: {TOTAL_DURATION}s (3m 00s) | FPS: {FPS} | Frames: {TOTAL_FRAMES}")
+    print("Z-AgentShield: 3-Minute Demo Video with Embedded Narrative Subtitles")
+    print(f"Target duration: {TOTAL_DURATION}s (~3m 10s) | FPS: {FPS} | Frames: {TOTAL_FRAMES}")
     print("=" * 65)
 
     if FRAMES_DIR.exists():
@@ -340,28 +430,24 @@ def main():
             # Perform browser action
             perform_action(driver, scene["action"])
 
-            # Capture base screenshot for this scene state
+            # Capture base screenshot for this scene
             raw_screenshot = FRAMES_DIR / f"raw_scene_{idx:02d}.png"
             driver.save_screenshot(str(raw_screenshot))
 
-            # Load base image and generate HUD overlay frames
-            base_img = cv2.imread(str(raw_screenshot))
-            if base_img is None:
-                print(f"    WARNING: Could not read screenshot for scene {idx}!")
-                continue
+            # Open with PIL
+            pil_base = Image.open(str(raw_screenshot))
 
             for f in range(num_frames):
-                frame_img = base_img.copy()
                 sec_in_video = global_sec + (f / FPS)
-                draw_hud_overlay(frame_img, scene, sec_in_video, TOTAL_DURATION)
+                composite_img = draw_subtitle_hud(pil_base, scene, sec_in_video, TOTAL_DURATION)
 
                 frame_file = FRAMES_DIR / f"frame_{frame_counter:05d}.png"
-                cv2.imwrite(str(frame_file), frame_img)
+                composite_img.save(str(frame_file))
                 frame_counter += 1
 
             global_sec += scene_duration
 
-        print(f"\n[Step 2/3] Successfully generated {frame_counter} composite frames.")
+        print(f"\n[Step 2/3] Successfully generated {frame_counter} subtitled frames.")
 
     finally:
         if driver:
@@ -370,8 +456,7 @@ def main():
             except Exception:
                 pass
 
-    print(f"\n[Step 3/3] Encoding frames into 1080p MP4 with OpenCV VideoWriter...")
-    # Read first frame to verify dimensions
+    print(f"\n[Step 3/3] Encoding frames into 1080p MP4...")
     first_frame_file = FRAMES_DIR / "frame_00000.png"
     if not first_frame_file.exists():
         print("ERROR: No frames found!")
@@ -406,10 +491,10 @@ def main():
         size_mb = OUTPUT_MP4.stat().st_size / (1024 * 1024)
         duration_s = len(frame_files) / FPS
         print("\n" + "=" * 65)
-        print("🎉 SUCCESS! Video Generation Complete.")
-        print(f"📁 Video Path: {OUTPUT_MP4}")
-        print(f"⏱️  Duration:   {int(duration_s)//60:02d}:{int(duration_s)%60:02d} ({duration_s:.1f} seconds)")
-        print(f"📦 File Size:  {size_mb:.2f} MB")
+        print("[SUCCESS] Subtitled Video Generation Complete.")
+        print(f"Video Path: {OUTPUT_MP4}")
+        print(f"Duration:   {int(duration_s)//60:02d}:{int(duration_s)%60:02d} ({duration_s:.1f} seconds)")
+        print(f"File Size:  {size_mb:.2f} MB")
         print("=" * 65)
     else:
         print("ERROR: Output file was not created!")
