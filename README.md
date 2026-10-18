@@ -348,6 +348,16 @@ For expanded endpoint and verification details, see
 Project material is offered under the Apache License 2.0; see [LICENSE](LICENSE).
 Third-party packages remain subject to their respective upstream licenses.
 
+## Submission materials
+
+- Pitch deck source: [submission/PITCH_DECK.html](submission/PITCH_DECK.html).
+- Seven-slide PDF draft:
+  [submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck-DRAFT.pdf](submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck-DRAFT.pdf).
+- The PDF is marked as a draft because the event's official file-naming rule
+  and remaining team metadata have not been confirmed.
+- The three-minute recording and verified LinuxONE deployment evidence are
+  not included.
+
 See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for an evidence-based demo plan
 and [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md) for remaining
 submission deliverables.

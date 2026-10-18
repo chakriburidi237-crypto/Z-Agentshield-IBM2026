@@ -15,10 +15,15 @@ has been made or that the project satisfies the event rules.
   The completed local project has been published to `main`; the starter
   repository history was preserved and merged without rewriting commits.
 - [x] Create and verify source-only ZIP artifact:
-  `Z-AgentShield-submission-source-2026-10-17.zip`. It excludes `.git`,
-  virtual environments, local databases, local secrets, and editor-specific
-  settings; it does not preserve Git history.
-- [ ] Confirm required pitch-deck PDF filename and export final PDF: **TODO**.
+  `Z-AgentShield-submission-source-2026-10-18.zip`. It includes the pitch deck
+  source and draft PDF; it excludes `.git`, virtual environments, local
+  databases, local secrets, and editor-specific settings, and does not preserve
+  Git history.
+- [x] Create a factual seven-slide pitch deck draft:
+  [PITCH_DECK.html](../submission/PITCH_DECK.html) and
+  [Team-Z-Innovators-Z-AgentShield-Pitch-Deck-DRAFT.pdf](../submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck-DRAFT.pdf).
+- [ ] Confirm the event's required PDF filename and review/approve the draft
+  before treating it as final: **TODO**.
 - [ ] Record and review a demo video of no more than three minutes: **TODO**.
 - [x] Team name provided: **Team Z Innovators**.
 - [ ] Confirm the remaining submission metadata: **TODO**.

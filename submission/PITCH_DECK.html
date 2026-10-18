@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Z-AgentShield | Pitch Deck Draft</title>
+  <style>
+    :root {
+      --navy: #102a3a;
+      --ink: #183442;
+      --muted: #58707b;
+      --teal: #087e8b;
+      --cyan: #36a9b8;
+      --pale: #eaf4f5;
+      --line: #d7e4e7;
+      --white: #ffffff;
+      --green: #2e7d63;
+      --amber: #a86612;
+      --red: #ad4545;
+    }
+    * { box-sizing: border-box; }
+    @page { size: 13.333in 7.5in; margin: 0; }
+    html, body { margin: 0; padding: 0; color: var(--ink); font-family: Arial, Helvetica, sans-serif; }
+    body { background: #dce7e9; }
+    .slide {
+      width: 13.333in; height: 7.5in; margin: 18px auto; padding: 0.55in 0.72in 0.48in;
+      position: relative; overflow: hidden; background: var(--white);
+      page-break-after: always; break-after: page;
+    }
+    .slide:last-child { page-break-after: auto; break-after: auto; }
+    .slide::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 9px; background: var(--teal); }
+    .cover { background: radial-gradient(circle at 85% 35%, #e5f4f5 0 15%, transparent 15.2%), linear-gradient(120deg, #fff 0 60%, #f1f8f8 100%); }
+    .cover::after { content: ""; position: absolute; width: 340px; height: 340px; border: 1px solid #b5dadd; border-radius: 50%; right: 105px; top: 95px; box-shadow: 0 0 0 34px rgba(8,126,139,.035), 0 0 0 68px rgba(8,126,139,.025); }
+    .cover .hero-shield { position: absolute; right: 220px; top: 178px; width: 150px; z-index: 1; }
+    .eyebrow { color: var(--teal); text-transform: uppercase; letter-spacing: 2px; font-weight: 700; font-size: 11pt; }
+    h1 { color: var(--navy); font-size: 39pt; line-height: 1.05; margin: 18px 0 12px; max-width: 700px; }
+    h2 { color: var(--navy); font-size: 28pt; margin: 10px 0 16px; line-height: 1.08; }
+    h3 { font-size: 15pt; color: var(--navy); margin: 0 0 8px; }
+    p { font-size: 14pt; line-height: 1.42; margin: 7px 0; }
+    .subtitle { color: var(--muted); font-size: 19pt; max-width: 610px; }
+    .tagline { margin-top: 22px; color: var(--teal); font-size: 17pt; font-weight: 700; }
+    .team { position: absolute; bottom: 1.05in; font-size: 14pt; color: var(--muted); }
+    .draft { position: absolute; right: 0.72in; bottom: 0.48in; font-size: 9pt; color: var(--amber); font-weight: 700; }
+    .grid { display: grid; gap: 15px; }
+    .two { grid-template-columns: 1fr 1fr; }
+    .three { grid-template-columns: repeat(3, 1fr); }
+    .card { border: 1px solid var(--line); border-radius: 12px; padding: 17px 19px; background: #fbfdfd; }
+    .card p, li { font-size: 12.5pt; line-height: 1.36; color: var(--muted); }
+    ul { margin: 7px 0 0; padding-left: 20px; }
+    li { margin: 8px 0; }
+    .callout { margin-top: 15px; padding: 13px 17px; background: var(--pale); border-left: 4px solid var(--teal); border-radius: 4px; font-size: 12pt; line-height: 1.38; }
+    .flow { display: flex; align-items: stretch; gap: 8px; margin: 24px 0 14px; }
+    .node { flex: 1; min-height: 92px; display: flex; justify-content: center; align-items: center; text-align: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #f7fbfb; color: var(--navy); font-weight: 700; font-size: 12pt; }
+    .node.gateway { background: var(--navy); color: var(--white); }
+    .node.policy { background: var(--pale); border-color: #acd6d9; }
+    .arrow { align-self: center; color: var(--teal); font-size: 18pt; font-weight: 700; }
+    .decisions { display: flex; gap: 12px; margin: 12px 0 16px; }
+    .decision { flex: 1; border-radius: 8px; text-align: center; color: #fff; padding: 11px; font-size: 13pt; font-weight: 700; }
+    .allow { background: var(--green); } .review { background: var(--amber); } .block { background: var(--red); }
+    .metric { color: var(--teal); font-size: 30pt; font-weight: 700; margin-bottom: 2px; }
+    .small { font-size: 10pt; color: var(--muted); }
+    .footer { position: absolute; bottom: 0.23in; left: 0.72in; right: 0.72in; display: flex; justify-content: space-between; color: #71838b; font-size: 9pt; border-top: 1px solid var(--line); padding-top: 7px; }
+    .mono { font-family: Consolas, monospace; font-size: 10pt; }
+    .url { color: var(--teal); word-break: break-word; }
+    @media print {
+      body { background: white; }
+      .slide { margin: 0; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <section class="slide cover">
+    <div class="eyebrow">IBM Z Datathon 2026 | Project pitch</div>
+    <h1>Z-AgentShield</h1>
+    <p class="subtitle">A policy-driven security gateway prototype for enterprise AI agent actions</p>
+    <p class="tagline">Let AI act. Keep every action under control.</p>
+    <p class="team">Team Z Innovators</p>
+    <div class="draft">DRAFT - confirm official PDF naming and submission rules</div>
+    <svg class="hero-shield" viewBox="0 0 120 140" role="img" aria-label="Original shield and network mark">
+      <path d="M60 7 108 25v39c0 31-18 52-48 69C30 116 12 95 12 64V25L60 7Z" fill="#087e8b"/>
+      <path d="M60 19 96 33v31c0 24-13 41-36 54C37 105 24 88 24 64V33l36-14Z" fill="#fff"/>
+      <circle cx="60" cy="54" r="12" fill="#102a3a"/>
+      <circle cx="42" cy="83" r="7" fill="#36a9b8"/>
+      <circle cx="78" cy="83" r="7" fill="#36a9b8"/>
+      <path d="M54 64 45 77m21-13 9 13M49 83h22" stroke="#087e8b" stroke-width="4" fill="none"/>
+      <path d="M53 52h14M60 45v18" stroke="#fff" stroke-width="2"/>
+    </svg>
+    <div class="footer"><span>Z-AgentShield | Local security-gateway prototype</span><span>01</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">01 | The challenge</div>
+    <h2>Agent actions need a control point</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>What changes with autonomous agents?</h3>
+        <ul>
+          <li>Agents can propose many tool and data operations at machine speed.</li>
+          <li>Individual services may apply different authorization and logging rules.</li>
+          <li>High-impact actions need consistent policy decisions and review routing.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>What the prototype addresses</h3>
+        <ul>
+          <li>Evaluate proposed actions against ordered enterprise policy rules.</li>
+          <li>Record a decision and selected redacted evidence in SQLite.</li>
+          <li>Present history, pending reviews, and policy previews in one local console.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout"><strong>Scope:</strong> the gateway evaluates actions. It does not execute downstream operations or connect to enterprise systems.</div>
+    <div class="footer"><span>Z-AgentShield | Problem and scope</span><span>02</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">02 | Proposed solution</div>
+    <h2>One decision path, visible evidence</h2>
+    <div class="grid three">
+      <div class="card"><div class="metric">01</div><h3>Intercept</h3><p>FastAPI validates a request and applies request identity checks.</p></div>
+      <div class="card"><div class="metric">02</div><h3>Evaluate</h3><p>Ordered YAML rules, risk scoring, and optional anomaly analysis inform a decision.</p></div>
+      <div class="card"><div class="metric">03</div><h3>Account</h3><p>SQLite persists decision evidence and pending review tickets; Streamlit displays bounded views.</p></div>
+    </div>
+    <div class="decisions">
+      <div class="decision allow">ALLOW<br><span class="small" style="color:#fff">only with trusted target verification</span></div>
+      <div class="decision review">REVIEW<br><span class="small" style="color:#fff">pending human review</span></div>
+      <div class="decision block">BLOCK<br><span class="small" style="color:#fff">mandatory or default deny</span></div>
+    </div>
+    <div class="callout">The default deployment has no trusted resource classifier; policy ALLOW is therefore converted to BLOCK. This is fail-closed behavior, not a successful authorization claim.</div>
+    <div class="footer"><span>Z-AgentShield | Decision model</span><span>03</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">03 | Architecture</div>
+    <h2>Proposed action to recorded decision</h2>
+    <div class="flow">
+      <div class="node">AI agent<br>proposed action</div><div class="arrow">›</div>
+      <div class="node gateway">FastAPI<br>security gateway</div><div class="arrow">›</div>
+      <div class="node policy">Policy engine<br>+ risk analysis</div>
+    </div>
+    <div class="flow" style="margin-top:5px">
+      <div class="node">Trusted resource<br>classification gate</div><div class="arrow">›</div>
+      <div class="node">Decision gate</div><div class="arrow">›</div>
+      <div class="node">SQLite audit<br>+ review queue</div><div class="arrow">›</div>
+      <div class="node">Streamlit<br>operations console</div>
+    </div>
+    <div class="decisions">
+      <div class="decision allow">ALLOW</div><div class="decision review">REVIEW</div><div class="decision block">BLOCK</div>
+    </div>
+    <p class="small">Rule order: mandatory deny → review → explicit allow → default deny. Decisions and selected metadata are recorded; no downstream action is executed by this prototype.</p>
+    <div class="footer"><span>Z-AgentShield | Request and evidence flow</span><span>04</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">04 | Security and transparency</div>
+    <h2>Controls first; limitations shown</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Implemented safeguards</h3>
+        <ul>
+          <li>Mandatory deny rules and default-deny policy behavior.</li>
+          <li>Policy ALLOW is blocked unless a trusted resource classifier verifies the target.</li>
+          <li>Selected sensitive parameter keys and inline values are redacted.</li>
+          <li>Swagger/OpenAPI is disabled by default and enabled only in explicit development mode.</li>
+          <li>Dashboard review actions remain read-only without trusted reviewer authentication.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Not claimed</h3>
+        <ul>
+          <li>No production identity provider or trusted reviewer authentication.</li>
+          <li>No authoritative resource registry/classifier configured by default.</li>
+          <li>Redaction is heuristic; SQLite is not cryptographically immutable.</li>
+          <li>Event records do not identify synthetic versus operational provenance.</li>
+          <li>No IBM service integration or verified LinuxONE deployment.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer"><span>Z-AgentShield | Trust boundaries and honest scope</span><span>05</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">05 | Demonstration and verification</div>
+    <h2>Evidence from repeatable local checks</h2>
+    <div class="grid three">
+      <div class="card"><div class="metric">184</div><h3>Unit tests</h3><p>Passed with exit code 0 under PATH Python 3.13.15.</p></div>
+      <div class="card"><div class="metric">18 / 18</div><h3>Live smoke checks</h3><p>Passed against isolated local API and dashboard instances with disposable SQLite storage.</p></div>
+      <div class="card"><div class="metric">5</div><h3>Dashboard sections</h3><p>SOC overview, human review, audit trail, behavioral analytics, policy simulator.</p></div>
+    </div>
+    <div class="callout"><strong>Observed in isolated verification:</strong> public-read request BLOCKED by the fail-closed classifier gate; bulk export REVIEW; repeated request ID returned the stored decision; unauthenticated review/audit access returned 401; synthetic secret marker was absent from audit output.</div>
+    <p style="margin-top:17px"><strong>Local dashboard:</strong> <span class="url">http://127.0.0.1:8501</span></p>
+    <p><strong>Local API docs (development only):</strong> <span class="url">http://127.0.0.1:8000/docs</span></p>
+    <p class="small">The verification writes only synthetic records to a disposable database, which was removed after the run. HTTP checks do not prove production readiness.</p>
+    <div class="footer"><span>Z-AgentShield | Local test evidence, not production evidence</span><span>06</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">06 | Roadmap and ask</div>
+    <h2>From prototype to a deployable control plane</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Next engineering steps</h3>
+        <ul>
+          <li>Integrate a server-controlled resource classifier and test failure behavior.</li>
+          <li>Add authenticated reviewer identity, authorization, and auditable decisions.</li>
+          <li>Validate audit integrity, retention, privacy, and event provenance requirements.</li>
+          <li>Deploy and test on IBM LinuxONE only when access is available; capture genuine evidence.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Submission and project status</h3>
+        <ul>
+          <li>Team: Team Z Innovators.</li>
+          <li>Source: <span class="mono">github.com/chakriburidi237-crypto/Z--AgentShield-IBM-2026</span></li>
+          <li>License: Apache-2.0.</li>
+          <li>Official deck filename, remaining submission metadata, and hacking-window eligibility still require confirmation.</li>
+          <li>This deck is a factual draft; no demo video or LinuxONE evidence is included.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout"><strong>Ask:</strong> help validate the resource trust boundary, reviewer identity integration, and deployment requirements before connecting this prototype to real systems.</div>
+    <div class="footer"><span>Z-AgentShield | Let AI act. Keep every action under control.</span><span>07</span></div>
+  </section>
+</body>
+</html>
