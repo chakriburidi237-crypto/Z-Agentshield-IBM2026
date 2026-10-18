@@ -5,6 +5,8 @@ All operations use parameterized SQL to guarantee protection against SQL injecti
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
+import hmac
 import json
 import sqlite3
 from typing import Any, Dict, List, Optional
@@ -118,6 +120,26 @@ class SecurityRepository:
                     ts,
                 ),
             )
+            if cursor.rowcount > 0:
+                self._append_audit_chain(
+                    conn,
+                    event_type="SECURITY_EVENT",
+                    event_id=request_id,
+                    payload={
+                        "request_id": request_id,
+                        "agent_id": agent_id,
+                        "action": action,
+                        "category": category,
+                        "resource": resource,
+                        "verdict": verdict,
+                        "risk_score": risk_score,
+                        "risk_level": risk_level,
+                        "reasons": reasons or [],
+                        "matched_rule_ids": matched_rule_ids or [],
+                        "timestamp": ts,
+                    },
+                    timestamp=ts,
+                )
             return cursor.rowcount > 0
 
     def get_security_event(self, request_id: str) -> Optional[SecurityEventRecord]:
@@ -407,7 +429,74 @@ class SecurityRepository:
                 sql,
                 (status_upper, reviewer_id.strip(), reviewer_notes, now, ticket_id),
             )
-            return cursor.rowcount > 0
+            if cursor.rowcount > 0:
+                ticket = conn.execute(
+                    "SELECT request_id FROM review_queue WHERE ticket_id = ?;",
+                    (ticket_id,),
+                ).fetchone()
+                self._append_audit_chain(
+                    conn,
+                    event_type="REVIEW_DECISION",
+                    event_id=ticket_id,
+                    payload={
+                        "ticket_id": ticket_id,
+                        "request_id": ticket["request_id"],
+                        "decision": status_upper,
+                        "reviewer_id": reviewer_id.strip(),
+                        "timestamp": now,
+                    },
+                    timestamp=now,
+                )
+                return True
+            return False
+
+    @staticmethod
+    def _append_audit_chain(
+        conn: sqlite3.Connection,
+        event_type: str,
+        event_id: str,
+        payload: Dict[str, Any],
+        timestamp: str,
+    ) -> None:
+        previous = conn.execute(
+            "SELECT entry_hash FROM audit_integrity_chain ORDER BY sequence DESC LIMIT 1;"
+        ).fetchone()
+        previous_hash = previous["entry_hash"] if previous else "GENESIS"
+        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        digest_input = "\n".join((previous_hash, event_type, event_id, payload_json, timestamp))
+        entry_hash = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
+        conn.execute(
+            "INSERT INTO audit_integrity_chain "
+            "(event_type, event_id, payload_json, previous_hash, entry_hash, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?);",
+            (event_type, event_id, payload_json, previous_hash, entry_hash, timestamp),
+        )
+
+    def verify_audit_chain(self) -> Dict[str, Any]:
+        """Verify chain links and hashes; this cannot detect DB-owner rewrites of the whole chain."""
+        with self.db.connection() as conn:
+            rows = conn.execute(
+                "SELECT sequence, event_type, event_id, payload_json, previous_hash, entry_hash, timestamp "
+                "FROM audit_integrity_chain ORDER BY sequence ASC;"
+            ).fetchall()
+        previous_hash = "GENESIS"
+        for expected_sequence, row in enumerate(rows, start=1):
+            if row["sequence"] != expected_sequence or row["previous_hash"] != previous_hash:
+                return {"valid": False, "entries_checked": expected_sequence - 1, "failure_sequence": row["sequence"]}
+            try:
+                payload = json.loads(row["payload_json"])
+                canonical_payload = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            except (json.JSONDecodeError, TypeError):
+                return {"valid": False, "entries_checked": expected_sequence - 1, "failure_sequence": row["sequence"]}
+            digest_input = "\n".join((
+                row["previous_hash"], row["event_type"], row["event_id"],
+                canonical_payload, row["timestamp"],
+            ))
+            actual_hash = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
+            if not hmac.compare_digest(actual_hash, row["entry_hash"]):
+                return {"valid": False, "entries_checked": expected_sequence - 1, "failure_sequence": row["sequence"]}
+            previous_hash = actual_hash
+        return {"valid": True, "entries_checked": len(rows), "failure_sequence": None}
 
     @staticmethod
     def _row_to_event(row: sqlite3.Row) -> SecurityEventRecord:

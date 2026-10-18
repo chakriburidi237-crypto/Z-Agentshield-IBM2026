@@ -14,15 +14,24 @@ Security invariants enforced at this layer:
 from datetime import datetime, timezone
 import logging
 from pathlib import Path
+import platform
+from time import perf_counter
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
+
+from zagentshield.auth import (
+    AuthenticatedUser,
+    AuthenticationError,
+    LocalAuthManager,
+)
 
 from zagentshield.anomalies.detector import AnomalyConfig, AnomalyDetector
 from zagentshield.audit.logger import AuditLogger
+from zagentshield.audit.redaction import redact_sensitive_data
 from zagentshield.config import get_settings
 from zagentshield.core.enums import ActionVerdict, RiskLevel
 from zagentshield.core.models import AgentRequest, SecurityEvaluation
@@ -35,6 +44,8 @@ from zagentshield.db.repository import (
     SecurityRepository,
 )
 from zagentshield.policies.engine import PolicyEngine
+from zagentshield.prompt_scanner import scan_prompt
+from zagentshield.threat_mappings import mappings_for_rule
 
 logger = logging.getLogger("zagentshield.api")
 
@@ -49,6 +60,20 @@ API_VERSION = "0.1.0"
 # ---------------------------------------------------------------------------
 # Request / Response Pydantic models for API layer
 # ---------------------------------------------------------------------------
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=128)
+    password: str = Field(..., min_length=1, max_length=1024)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    role: str
 
 
 class ReviewDecisionRequest(BaseModel):
@@ -96,7 +121,9 @@ class ReviewTicketResponse(BaseModel):
 
     @classmethod
     def from_record(cls, record: ReviewTicketRecord) -> "ReviewTicketResponse":
-        return cls(**record.__dict__)
+        values = record.__dict__.copy()
+        values["reviewer_notes"] = redact_sensitive_data(record.reviewer_notes)
+        return cls(**values)
 
 
 class AuditEventResponse(BaseModel):
@@ -137,6 +164,12 @@ class AuditEventResponse(BaseModel):
         )
 
 
+class PromptScanRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=10_000)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ErrorResponse(BaseModel):
     """Uniform error envelope. Never exposes internal detail."""
 
@@ -155,46 +188,32 @@ class InterceptResponseWithTicket(InterceptResponse):
 
 # ---------------------------------------------------------------------------
 # Authentication dependency
-# ---------------------------------------------------------------------------
-# Z-AgentShield does not implement a production identity provider. Privileged
-# endpoints (review decisions, audit logs) require the caller to supply a
-# trusted reviewer identity via the X-Reviewer-Id HTTP header.
-#
-# IMPORTANT SECURITY NOTE:
-#   This header-based mechanism is an integration boundary, NOT a cryptographic
-#   authentication system. In production, the gateway MUST be placed behind a
-#   reverse proxy or API gateway that validates identity tokens and injects this
-#   header from a verified, server-side source. The client MUST NOT be trusted
-#   to supply its own identity claims directly.
-#
-#   The server NEVER accepts reviewer_id, is_admin, or permission flags from
-#   the request JSON body. Only the server-injected header is consulted.
+
+def require_authenticated_user(
+    request: Request,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> AuthenticatedUser:
+    """Validate a signed bearer token; caller-supplied identity headers are ignored."""
+    manager: LocalAuthManager = request.app.state.auth_manager
+    if not manager.configured:
+        raise HTTPException(status_code=503, detail={"error": "Authentication is not configured.", "code": "AUTH_UNAVAILABLE"})
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail={"error": "A valid bearer token is required.", "code": "UNAUTHENTICATED"}, headers={"WWW-Authenticate": "Bearer"})
+    try:
+        return manager.verify_token(authorization[7:].strip())
+    except AuthenticationError:
+        raise HTTPException(status_code=401, detail={"error": "A valid bearer token is required.", "code": "UNAUTHENTICATED"}, headers={"WWW-Authenticate": "Bearer"})
 
 
-def require_reviewer_identity(
-    x_reviewer_id: Optional[str] = Header(default=None, alias="X-Reviewer-Id"),
-) -> str:
-    """Dependency that fails closed if no reviewer identity header is present.
-
-    In production, set this header from a verified server-side auth token.
-    This dependency must NOT be bypassed by client-supplied JSON fields.
-    """
-    if not x_reviewer_id or not x_reviewer_id.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "Reviewer identity required. Set X-Reviewer-Id from a trusted authentication source.", "code": "UNAUTHENTICATED"},
-        )
-    reviewer = x_reviewer_id.strip()
-    # Reject suspiciously long or malformed reviewer identities
-    if len(reviewer) > 128 or not reviewer.isprintable():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "Invalid reviewer identity format.", "code": "INVALID_REVIEWER_ID"},
-        )
-    return reviewer
+def require_review_access(
+    user: AuthenticatedUser = Depends(require_authenticated_user),
+) -> AuthenticatedUser:
+    """Authorize only configured SOC analyst and security admin roles."""
+    if user.role not in {"SOC_ANALYST", "SECURITY_ADMIN"}:
+        raise HTTPException(status_code=403, detail={"error": "Insufficient role.", "code": "FORBIDDEN"})
+    return user
 
 
-# ---------------------------------------------------------------------------
 # Application Factory
 # ---------------------------------------------------------------------------
 
@@ -213,12 +232,14 @@ class AppServices:
         audit_logger: AuditLogger,
         anomaly_detector: Optional[AnomalyDetector] = None,
         resource_classifier: Optional[Callable[[AgentRequest], bool]] = None,
+        auth_manager: Optional[LocalAuthManager] = None,
     ) -> None:
         self.policy_engine = policy_engine
         self.repository = repository
         self.audit_logger = audit_logger
         self.anomaly_detector = anomaly_detector
         self.resource_classifier = resource_classifier
+        self.auth_manager = auth_manager
 
 
 def _apply_resource_classification_gate(
@@ -313,6 +334,15 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
 
     # Store services in app state for dependency injection
     app.state.services = services
+    app.state.auth_manager = (
+        services.auth_manager
+        if services is not None and services.auth_manager is not None
+        else LocalAuthManager(
+            settings.auth_users_json,
+            settings.auth_token_secret,
+            settings.auth_token_lifetime_seconds,
+        )
+    )
 
     # -----------------------------------------------------------------------
     # Global error handlers — never expose internal detail
@@ -357,6 +387,26 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
         return svc
 
     # -----------------------------------------------------------------------
+    @app.post(
+        "/api/v1/auth/login",
+        response_model=AccessTokenResponse,
+        summary="Create a local authenticated session",
+        tags=["Authentication"],
+    )
+    async def login(body: LoginRequest, request: Request) -> AccessTokenResponse:
+        manager: LocalAuthManager = request.app.state.auth_manager
+        if not manager.configured:
+            raise HTTPException(status_code=503, detail={"error": "Authentication is not configured.", "code": "AUTH_UNAVAILABLE"})
+        try:
+            token, user = manager.login(body.username.strip(), body.password)
+        except AuthenticationError:
+            raise HTTPException(status_code=401, detail={"error": "Invalid username or password.", "code": "INVALID_CREDENTIALS"})
+        return AccessTokenResponse(
+            access_token=token,
+            role=user.role,
+            expires_in=manager.token_lifetime_seconds,
+        )
+
     # Route: GET /
     # -----------------------------------------------------------------------
 
@@ -376,6 +426,31 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
         }
 
     # -----------------------------------------------------------------------
+    @app.post(
+        "/api/v1/security/prompt-scan",
+        summary="Run explainable, non-persistent prompt-risk rules",
+        tags=["Security analysis"],
+    )
+    async def prompt_scan(body: PromptScanRequest) -> Dict[str, Any]:
+        """Scan caller text without echoing or persisting the submitted prompt."""
+        result = scan_prompt(body.prompt)
+        return {
+            "risk_score": result.risk_score,
+            "risk_level": result.risk_level,
+            "findings": [
+                {
+                    "rule_id": finding.rule_id,
+                    "severity": finding.severity,
+                    "description": finding.description,
+                    "indicator": finding.matched_indicator,
+                    "mappings": mappings_for_rule(finding.rule_id),
+                }
+                for finding in result.findings
+            ],
+            "persisted": False,
+            "detector_type": "deterministic_rules",
+        }
+
     # Route: GET /health
     # -----------------------------------------------------------------------
 
@@ -547,13 +622,26 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
     )
     async def list_reviews(
         limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+        offset: int = Query(default=0, ge=0),
+        agent_id: Optional[str] = Query(default=None, max_length=128),
+        risk_level: Optional[str] = Query(default=None),
+        response: Response = None,
         svc: AppServices = Depends(get_services),
+        _user: AuthenticatedUser = Depends(require_review_access),
     ) -> List[ReviewTicketResponse]:
         """Return pending review tickets with bounded pagination.
 
         Defaults to PENDING status. Limit is bounded to prevent unbounded reads.
         """
-        tickets = svc.repository.list_pending_reviews(limit=limit)
+        valid_risk_levels = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+        if risk_level is not None and risk_level.upper() not in valid_risk_levels:
+            raise HTTPException(status_code=400, detail={"error": "Invalid risk level.", "code": "INVALID_FILTER"})
+        risk_filter = risk_level.upper() if risk_level else None
+        total = svc.repository.count_pending_reviews(agent_id=agent_id, risk_level=risk_filter)
+        tickets = svc.repository.list_pending_reviews(
+            limit=limit, offset=offset, agent_id=agent_id, risk_level=risk_filter
+        )
+        response.headers["X-Total-Count"] = str(total)
         return [ReviewTicketResponse.from_record(t) for t in tickets]
 
     # -----------------------------------------------------------------------
@@ -569,7 +657,7 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
     async def decide_review(
         ticket_id: str,
         body: ReviewDecisionRequest,
-        reviewer_id: str = Depends(require_reviewer_identity),
+        user: AuthenticatedUser = Depends(require_review_access),
         svc: AppServices = Depends(get_services),
     ) -> ReviewTicketResponse:
         """Record an explicit APPROVED or REJECTED decision on a review ticket.
@@ -610,8 +698,8 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
             updated = svc.repository.update_review_status(
                 ticket_id=ticket_id,
                 new_status=decision_upper,
-                reviewer_id=reviewer_id,  # From trusted header, NOT from body
-                reviewer_notes=body.reviewer_notes,
+                reviewer_id=user.username,  # Derived from the validated bearer token
+                reviewer_notes=redact_sensitive_data(body.reviewer_notes),
             )
         except InvalidReviewStateError as e:
             raise HTTPException(
@@ -653,7 +741,7 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
         limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
         offset: int = Query(default=0, ge=0),
         verdict: Optional[str] = Query(default=None),
-        reviewer_id: str = Depends(require_reviewer_identity),
+        user: AuthenticatedUser = Depends(require_review_access),
         svc: AppServices = Depends(get_services),
     ) -> List[AuditEventResponse]:
         """Return sanitized audit records.
@@ -678,6 +766,50 @@ def create_app(services: Optional[AppServices] = None) -> FastAPI:
             verdict=verdict.upper() if verdict else None,
         )
         return [AuditEventResponse.from_record(e) for e in events]
+
+    @app.get(
+        "/api/v1/audit/integrity",
+        summary="Verify the persisted SHA-256 audit chain",
+        tags=["Audit"],
+    )
+    async def audit_integrity(
+        svc: AppServices = Depends(get_services),
+        _user: AuthenticatedUser = Depends(require_review_access),
+    ) -> Dict[str, Any]:
+        """Verify hash links from the chain's first recorded entry onward."""
+        return svc.repository.verify_audit_chain()
+
+    @app.get(
+        "/api/v1/system/telemetry",
+        summary="Return measured local service and platform information",
+        tags=["System"],
+    )
+    async def system_telemetry(
+        svc: AppServices = Depends(get_services),
+    ) -> Dict[str, Any]:
+        started = perf_counter()
+        now_utc = datetime.now(timezone.utc)
+        since = (now_utc - __import__("datetime").timedelta(seconds=60)).isoformat()
+        event_count = svc.repository.count_security_events(since_iso=since)
+        machine = platform.machine()
+        system = platform.system()
+        return {
+            "status": "healthy",
+            "host_system": system,
+            "host_release": platform.release(),
+            "architecture": machine,
+            "python_version": platform.python_version(),
+            "s390x_architecture_detected": system == "Linux" and machine.lower() in {"s390x", "s390"},
+            "linuxone_deployment_verified": False,
+            "persisted_events_last_60_seconds": event_count,
+            "measurement_window_seconds": 60,
+            "cpu_usage_percent": None,
+            "memory_usage_bytes": None,
+            "resource_metrics_status": "unavailable_without_host_metrics_provider",
+            "route_processing_ms": round((perf_counter() - started) * 1000, 3),
+            "database_status": "healthy",
+            "measured_at": now_utc.isoformat(),
+        }
 
     return app
 

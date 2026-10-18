@@ -330,6 +330,46 @@ class TestDatabaseRepository(unittest.TestCase):
         with self.assertRaises(InvalidReviewStateError):
             self.repo.update_review_status(ticket.ticket_id, "IN_PROGRESS", reviewer_id="admin_2")
 
+    def test_hash_chain_verifies_and_detects_tampering(self) -> None:
+        self.repo.record_security_event(
+            request_id="req-chain-01",
+            agent_id="agent-test",
+            action="read",
+            category="READ",
+            resource="synthetic/public",
+            verdict="BLOCK",
+            risk_score=99.0,
+            risk_level="CRITICAL",
+            reasons=["Synthetic integrity test"],
+            matched_rule_ids=["test-rule"],
+        )
+        ticket = self.repo.create_review_ticket(
+            request_id="req-chain-review",
+            agent_id="agent-test",
+            action="export",
+            category="EXPORT",
+            resource="synthetic/data",
+            risk_score=60.0,
+            risk_level="HIGH",
+            reasons=["Synthetic review integrity test"],
+        )
+        self.repo.update_review_status(
+            ticket.ticket_id, "REJECTED", reviewer_id="analyst-test"
+        )
+
+        verification = self.repo.verify_audit_chain()
+        self.assertTrue(verification["valid"])
+        self.assertEqual(verification["entries_checked"], 2)
+
+        with self.db.connection() as conn:
+            conn.execute(
+                "UPDATE audit_integrity_chain SET payload_json = ? WHERE sequence = 1;",
+                ('{"tampered":true}',),
+            )
+        verification = self.repo.verify_audit_chain()
+        self.assertFalse(verification["valid"])
+        self.assertEqual(verification["failure_sequence"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

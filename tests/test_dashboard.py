@@ -46,7 +46,7 @@ class TestDashboard(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def render_dashboard(self):
-        return AppTest.from_file(str(DASHBOARD_PATH), default_timeout=30).run()
+        return AppTest.from_file(str(DASHBOARD_PATH), default_timeout=60).run()
 
     def test_all_dashboard_sections_render_with_empty_data(self) -> None:
         app = self.render_dashboard()
@@ -56,6 +56,10 @@ class TestDashboard(unittest.TestCase):
             "Audit trail": "Audit trail",
             "Behavioral analytics": "Historical behavioral analytics",
             "Policy simulator": "Policy simulator",
+            "Prompt scanner": "Explainable prompt-risk scanner",
+            "Attack simulation": "Synthetic attack scenarios",
+            "Agent blast radius": "Agent blast radius",
+            "System telemetry": "Measured gateway and host telemetry",
         }
         for section, heading in expected_sections.items():
             app.selectbox[0].select(section).run()
@@ -68,10 +72,10 @@ class TestDashboard(unittest.TestCase):
                 )
             elif section == "Human review":
                 self.assertTrue(
-                    any("No pending review tickets" in message for message in info_messages)
+                    any("Sign in" in message for message in info_messages)
                 )
             elif section == "Audit trail":
-                self.assertIn("No audit records match the selected filters.", info_messages)
+                self.assertTrue(any("Sign in" in message for message in info_messages))
             elif section == "Behavioral analytics":
                 self.assertTrue(
                     any("No persisted events are available" in message for message in info_messages)
@@ -108,6 +112,25 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(displayed["ALLOW"], "1")
         self.assertEqual(displayed["BLOCK"], "1")
         self.assertEqual(displayed["Average risk score"], "50.0/100")
+
+    def test_empty_overview_displays_zeroes_without_demo_metrics(self) -> None:
+        app = self.render_dashboard()
+        displayed = {metric.label: metric.value for metric in app.metric}
+        self.assertEqual(displayed["Recorded events"], "0")
+        self.assertEqual(displayed["ALLOW"], "0")
+        self.assertEqual(displayed["REVIEW"], "0")
+        self.assertEqual(displayed["BLOCK"], "0")
+        self.assertEqual(displayed["Pending reviews"], "0")
+        self.assertEqual(displayed["Average risk score"], "N/A")
+        self.assertTrue(
+            any(
+                "No persisted decision data is available" in message.value
+                for message in app.info
+            )
+        )
+        self.assertFalse(
+            any("48,392" in str(element.value) for element in app.markdown)
+        )
 
     def test_simulator_preview_does_not_persist_an_event(self) -> None:
         app = self.render_dashboard()

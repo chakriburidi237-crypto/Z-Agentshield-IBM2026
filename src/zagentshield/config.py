@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     dashboard_host: str = "127.0.0.1"
     dashboard_port: int = 8501
 
+    # Local RBAC. Empty defaults keep privileged endpoints unavailable.
+    auth_users_json: str = ""
+    auth_token_secret: str = ""
+    auth_token_lifetime_seconds: int = 900
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -55,7 +60,9 @@ class Settings(BaseSettings):
 
     def to_safe_dict(self) -> Dict[str, Any]:
         """Return a representation of the configuration with any sensitive fields masked."""
-        sensitive_patterns = {"key", "secret", "token", "password", "auth", "credential"}
+        sensitive_patterns = {
+            "key", "secret", "token", "password", "auth", "credential", "users_json"
+        }
         raw_dict = self.model_dump()
         safe_dict: Dict[str, Any] = {}
 

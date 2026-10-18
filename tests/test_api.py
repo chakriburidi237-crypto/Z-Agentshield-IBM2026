@@ -7,13 +7,14 @@ Security invariants verified:
 - BLOCK never invokes callbacks or returns 2xx with allowed=True.
 - REVIEW never auto-executes; always returns a ticket_id.
 - Audit failures produce fail-closed BLOCK responses.
-- Client-supplied reviewer identity fields are ignored; only X-Reviewer-Id header counts.
+- Reviewer identity is derived from a verified bearer token; spoofed identity headers are ignored.
 - Sensitive parameters are not echoed in responses.
 - Unauthenticated privileged endpoints return 401.
 - Policy engine exceptions fail closed.
 - Unexpected exceptions return 500, never 200.
 """
 
+import json
 import sqlite3
 import os
 import unittest
@@ -36,6 +37,25 @@ from zagentshield.db.database import Database, SCHEMA_SQL
 from zagentshield.db.repository import SecurityRepository
 from zagentshield.policies.engine import PolicyEngine
 from zagentshield.config import get_settings
+from zagentshield.auth import AuthenticatedUser, LocalAuthManager, create_password_record
+
+_TEST_PASSWORD_RECORD = create_password_record("test-password-for-api-01")
+_TEST_AUTH_USERS = json.dumps([
+    {"username": "reviewer-alice", "role": "SOC_ANALYST", **_TEST_PASSWORD_RECORD},
+    {"username": "reviewer-bob", "role": "SOC_ANALYST", **_TEST_PASSWORD_RECORD},
+    {"username": "admin-01", "role": "SECURITY_ADMIN", **_TEST_PASSWORD_RECORD},
+    {"username": "admin-charlie", "role": "SECURITY_ADMIN", **_TEST_PASSWORD_RECORD},
+])
+
+
+def _test_auth_manager():
+    return LocalAuthManager(_TEST_AUTH_USERS, "test-signing-secret-value-32-bytes-min")
+
+
+def _auth_headers(client, username="reviewer-alice"):
+    user = AuthenticatedUser(username, "SECURITY_ADMIN" if username.startswith("admin") else "SOC_ANALYST")
+    return {"Authorization": "Bearer " + client.app.state.auth_manager.issue_token(user)}
+
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +184,7 @@ def _make_services(
         audit_logger=audit,
         anomaly_detector=detector,
         resource_classifier=resource_classifier,
+        auth_manager=_test_auth_manager(),
     )
 
 
@@ -584,14 +605,14 @@ class TestReviewList(unittest.TestCase):
 
     def test_empty_when_no_pending_tickets(self):
         """Review list is empty when no REVIEW actions have been processed."""
-        resp = self.client.get("/api/v1/reviews")
+        resp = self.client.get("/api/v1/reviews", headers=_auth_headers(self.client))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), [])
 
     def test_returns_pending_ticket(self):
         """Review list returns pending tickets after a REVIEW-verdict intercept."""
         self.client.post("/api/v1/intercept", json=REVIEW_BODY)
-        resp = self.client.get("/api/v1/reviews")
+        resp = self.client.get("/api/v1/reviews", headers=_auth_headers(self.client))
         self.assertEqual(resp.status_code, 200)
         tickets = resp.json()
         self.assertGreater(len(tickets), 0)
@@ -603,19 +624,19 @@ class TestReviewList(unittest.TestCase):
             body = REVIEW_BODY.copy()
             body["request_id"] = f"req-page-{i:03d}"
             self.client.post("/api/v1/intercept", json=body)
-        resp = self.client.get("/api/v1/reviews?limit=2")
+        resp = self.client.get("/api/v1/reviews?limit=2", headers=_auth_headers(self.client))
         self.assertEqual(resp.status_code, 200)
         self.assertLessEqual(len(resp.json()), 2)
 
     def test_limit_above_max_rejected_422(self):
         """limit > MAX_PAGE_SIZE returns 422."""
-        resp = self.client.get("/api/v1/reviews?limit=9999")
+        resp = self.client.get("/api/v1/reviews?limit=9999", headers=_auth_headers(self.client))
         self.assertEqual(resp.status_code, 422)
 
     def test_ticket_schema(self):
         """Review ticket response has all required fields."""
         self.client.post("/api/v1/intercept", json=REVIEW_BODY)
-        ticket = self.client.get("/api/v1/reviews").json()[0]
+        ticket = self.client.get("/api/v1/reviews", headers=_auth_headers(self.client)).json()[0]
         for field in ["ticket_id", "request_id", "agent_id", "action",
                       "status", "risk_score", "risk_level", "reasons",
                       "created_at", "updated_at"]:
@@ -640,7 +661,7 @@ class TestReviewDecision(unittest.TestCase):
         return self.client.post(
             f"/api/v1/reviews/{self.ticket_id}/decision",
             json=body,
-            headers={"X-Reviewer-Id": reviewer},
+            headers=_auth_headers(self.client, reviewer),
         )
 
     def test_approve_ticket_succeeds(self):
@@ -671,7 +692,7 @@ class TestReviewDecision(unittest.TestCase):
         resp = self.client.post(
             f"/api/v1/reviews/{self.ticket_id}/decision",
             json={"decision": "APPROVED", "fake_reviewer": "attacker"},
-            headers={"X-Reviewer-Id": "reviewer-bob"},
+            headers=_auth_headers(self.client, "reviewer-bob"),
         )
         # 'fake_reviewer' is an extra field → schema validation rejects it
         self.assertEqual(resp.status_code, 422)
@@ -695,7 +716,7 @@ class TestReviewDecision(unittest.TestCase):
         resp = self.client.post(
             "/api/v1/reviews/tkt-does-not-exist/decision",
             json={"decision": "APPROVED"},
-            headers={"X-Reviewer-Id": "reviewer-alice"},
+            headers=_auth_headers(self.client, "reviewer-alice"),
         )
         self.assertEqual(resp.status_code, 404)
 
@@ -728,21 +749,21 @@ class TestAuditLogs(unittest.TestCase):
 
     def test_authenticated_access_returns_records(self):
         """Valid X-Reviewer-Id returns audit records."""
-        resp = self.client.get("/api/v1/audit/logs", headers={"X-Reviewer-Id": "admin-01"})
+        resp = self.client.get("/api/v1/audit/logs", headers=_auth_headers(self.client, "admin-01"))
         self.assertEqual(resp.status_code, 200)
         self.assertIsInstance(resp.json(), list)
         self.assertGreater(len(resp.json()), 0)
 
     def test_response_has_no_raw_parameters_redacted_field(self):
         """Audit records never expose parameters_redacted."""
-        resp = self.client.get("/api/v1/audit/logs", headers={"X-Reviewer-Id": "admin-01"})
+        resp = self.client.get("/api/v1/audit/logs", headers=_auth_headers(self.client, "admin-01"))
         for event in resp.json():
             self.assertNotIn("parameters_redacted", event)
 
     def test_verdict_filter_allow(self):
         """verdict=ALLOW filter returns only ALLOW records."""
         resp = self.client.get(
-            "/api/v1/audit/logs?verdict=ALLOW", headers={"X-Reviewer-Id": "admin-01"}
+            "/api/v1/audit/logs?verdict=ALLOW", headers=_auth_headers(self.client, "admin-01")
         )
         self.assertEqual(resp.status_code, 200)
         for event in resp.json():
@@ -751,21 +772,21 @@ class TestAuditLogs(unittest.TestCase):
     def test_invalid_verdict_filter_returns_400(self):
         """Invalid verdict filter value returns 400."""
         resp = self.client.get(
-            "/api/v1/audit/logs?verdict=GRANTED", headers={"X-Reviewer-Id": "admin-01"}
+            "/api/v1/audit/logs?verdict=GRANTED", headers=_auth_headers(self.client, "admin-01")
         )
         self.assertEqual(resp.status_code, 400)
 
     def test_limit_above_max_rejected_422(self):
         """limit > MAX_PAGE_SIZE returns 422."""
         resp = self.client.get(
-            "/api/v1/audit/logs?limit=9999", headers={"X-Reviewer-Id": "admin-01"}
+            "/api/v1/audit/logs?limit=9999", headers=_auth_headers(self.client, "admin-01")
         )
         self.assertEqual(resp.status_code, 422)
 
     def test_negative_offset_rejected_422(self):
         """offset < 0 returns 422."""
         resp = self.client.get(
-            "/api/v1/audit/logs?offset=-1", headers={"X-Reviewer-Id": "admin-01"}
+            "/api/v1/audit/logs?offset=-1", headers=_auth_headers(self.client, "admin-01")
         )
         self.assertEqual(resp.status_code, 422)
 
@@ -907,6 +928,7 @@ def _make_memory_services(
         audit_logger=audit,
         anomaly_detector=detector,
         resource_classifier=resource_classifier,
+        auth_manager=_test_auth_manager(),
     )
 
 
@@ -1269,7 +1291,7 @@ class TestReviewListEndpoint(unittest.TestCase):
     def test_reviews_list_returns_pending(self):
         """Review list returns pending tickets."""
         self._create_review_ticket()
-        resp = self.client.get("/api/v1/reviews")
+        resp = self.client.get("/api/v1/reviews", headers=_auth_headers(self.client))
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertIsInstance(data, list)
@@ -1277,7 +1299,7 @@ class TestReviewListEndpoint(unittest.TestCase):
 
     def test_reviews_list_empty_when_no_pending(self):
         """Review list is empty when there are no pending tickets."""
-        resp = self.client.get("/api/v1/reviews")
+        resp = self.client.get("/api/v1/reviews", headers=_auth_headers(self.client))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), [])
 
@@ -1289,19 +1311,19 @@ class TestReviewListEndpoint(unittest.TestCase):
             body["request_id"] = f"req-pagination-{i:03d}"
             self.client.post("/api/v1/intercept", json=body)
 
-        resp = self.client.get("/api/v1/reviews?limit=2")
+        resp = self.client.get("/api/v1/reviews?limit=2", headers=_auth_headers(self.client))
         self.assertEqual(resp.status_code, 200)
         self.assertLessEqual(len(resp.json()), 2)
 
     def test_reviews_pagination_limit_max_bounded(self):
         """Limit above MAX_PAGE_SIZE is rejected."""
-        resp = self.client.get("/api/v1/reviews?limit=9999")
+        resp = self.client.get("/api/v1/reviews?limit=9999", headers=_auth_headers(self.client))
         self.assertEqual(resp.status_code, 422)
 
     def test_reviews_ticket_schema(self):
         """Review ticket response has all required fields."""
         self._create_review_ticket()
-        resp = self.client.get("/api/v1/reviews")
+        resp = self.client.get("/api/v1/reviews", headers=_auth_headers(self.client))
         ticket = resp.json()[0]
         for field in ["ticket_id", "request_id", "agent_id", "action",
                       "status", "risk_score", "risk_level", "reasons",
@@ -1328,7 +1350,7 @@ class TestReviewDecisionEndpoint(unittest.TestCase):
         return self.client.post(
             f"/api/v1/reviews/{ticket_id}/decision",
             json=body,
-            headers={"X-Reviewer-Id": reviewer_id},
+            headers=_auth_headers(self.client, reviewer_id),
         )
 
     def test_approve_review_ticket(self):
@@ -1359,7 +1381,7 @@ class TestReviewDecisionEndpoint(unittest.TestCase):
         resp = self.client.post(
             f"/api/v1/reviews/{self.ticket_id}/decision",
             json={"decision": "APPROVED", "fake_reviewer": "attacker-id"},
-            headers={"X-Reviewer-Id": "reviewer-bob"},
+            headers=_auth_headers(self.client, "reviewer-bob"),
         )
         self.assertEqual(resp.status_code, 422)  # 'fake_reviewer' is extra field → 422
         # Or if extra field is not in model, verify ticket is not corrupted
@@ -1413,7 +1435,7 @@ class TestAuditLogsEndpoint(unittest.TestCase):
         """Valid X-Reviewer-Id header allows audit log access."""
         resp = self.client.get(
             "/api/v1/audit/logs",
-            headers={"X-Reviewer-Id": "admin-charlie"},
+            headers=_auth_headers(self.client, "admin-charlie"),
         )
         self.assertEqual(resp.status_code, 200)
         self.assertIsInstance(resp.json(), list)
@@ -1423,7 +1445,7 @@ class TestAuditLogsEndpoint(unittest.TestCase):
         """Audit records do not expose raw parameters_redacted field."""
         resp = self.client.get(
             "/api/v1/audit/logs",
-            headers={"X-Reviewer-Id": "admin-charlie"},
+            headers=_auth_headers(self.client, "admin-charlie"),
         )
         for event in resp.json():
             self.assertNotIn("parameters_redacted", event)
@@ -1432,7 +1454,7 @@ class TestAuditLogsEndpoint(unittest.TestCase):
         """Valid verdict filter returns correct results."""
         resp = self.client.get(
             "/api/v1/audit/logs?verdict=ALLOW",
-            headers={"X-Reviewer-Id": "admin-charlie"},
+            headers=_auth_headers(self.client, "admin-charlie"),
         )
         self.assertEqual(resp.status_code, 200)
         for event in resp.json():
@@ -1442,7 +1464,7 @@ class TestAuditLogsEndpoint(unittest.TestCase):
         """Invalid verdict filter returns 400."""
         resp = self.client.get(
             "/api/v1/audit/logs?verdict=GRANTED",
-            headers={"X-Reviewer-Id": "admin-charlie"},
+            headers=_auth_headers(self.client, "admin-charlie"),
         )
         self.assertEqual(resp.status_code, 400)
 
@@ -1450,7 +1472,7 @@ class TestAuditLogsEndpoint(unittest.TestCase):
         """Limit above MAX_PAGE_SIZE is rejected with 422."""
         resp = self.client.get(
             "/api/v1/audit/logs?limit=9999",
-            headers={"X-Reviewer-Id": "admin-charlie"},
+            headers=_auth_headers(self.client, "admin-charlie"),
         )
         self.assertEqual(resp.status_code, 422)
 
@@ -1458,7 +1480,7 @@ class TestAuditLogsEndpoint(unittest.TestCase):
         """Negative offset is rejected with 422."""
         resp = self.client.get(
             "/api/v1/audit/logs?offset=-1",
-            headers={"X-Reviewer-Id": "admin-charlie"},
+            headers=_auth_headers(self.client, "admin-charlie"),
         )
         self.assertEqual(resp.status_code, 422)
 

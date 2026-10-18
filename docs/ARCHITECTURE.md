@@ -15,10 +15,12 @@ policy `ALLOW` is converted to `BLOCK`. A classifier must use server-controlled
 identity/authorization data and must not merely trust the request's resource
 string.
 
-The reviewer `X-Reviewer-Id` header is an integration boundary, not
-authentication. A trusted upstream identity service must validate a reviewer
-and inject that header before review or audit endpoints are exposed. The
-dashboard does not offer reviewer decisions until such an integration exists.
+Privileged review and audit routes require a server-verified signed bearer
+token. Local demo users are configured by the server using password hashes and
+a signing secret; identity and role values in caller-supplied headers are
+ignored. Authentication remains unavailable (and the routes fail closed)
+unless valid server-side configuration is supplied. This local mechanism is
+not a production identity provider.
 
 ## Architecture
 
@@ -34,7 +36,7 @@ flowchart LR
     Audit["Audit logger and redaction"]
     DB[("SQLite security_events and review_queue")]
     UI["Streamlit operations dashboard"]
-    Reviewer["Trusted reviewer identity integration"]
+    Reviewer["Server-configured local RBAC"]
 
     Agent --> API --> Schema --> Anomaly --> Policy
     Policy -->|"Mandatory deny"| Gate
@@ -44,7 +46,7 @@ flowchart LR
     Classifier -->|"Missing or unverified: BLOCK"| Gate
     Gate --> Audit --> DB
     DB --> UI
-    Reviewer -. "X-Reviewer-Id injected by trusted layer" .-> API
+    Reviewer -. "Signed bearer token; role checked server-side" .-> API
     API -. "Decision is recorded; no downstream execution" .-> Agent
 ```
 
@@ -67,7 +69,8 @@ flowchart LR
    the ticket state; approval does not execute the original operation.
 7. The dashboard reads the configured database, checks the gateway health
    endpoint, and offers a policy preview. A preview is not an authorization
-   decision and is not persisted.
+   decision and is not persisted. Reviewer and audit views require a bearer
+   token obtained through the gateway login endpoint.
 
 ## Decision states
 
@@ -82,8 +85,11 @@ flowchart LR
 ## Persistence, audit, and limitations
 
 SQLite stores decision fields, matched rules, explanatory reasons, redacted
-parameters, and review-ticket status. This implementation is not a
-cryptographically immutable audit store. Redaction uses key matching and
+parameters, and review-ticket status. New security events and review decisions
+are linked through a SHA-256 hash chain with a protected verification endpoint.
+This detects ordinary record/link tampering but is not a cryptographically
+immutable audit store: an operator able to rewrite the database can rebuild the
+chain, and older records are not retroactively chained. Redaction uses key matching and
 recognizable text patterns; it cannot guarantee removal of arbitrary secrets or
 personal information. The existing schema does not label records as synthetic
 or operational, and the dashboard says so rather than inferring provenance.

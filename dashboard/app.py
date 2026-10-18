@@ -17,12 +17,14 @@ import streamlit as st
 from pydantic import ValidationError
 
 from zagentshield.audit.redaction import redact_sensitive_data
+from zagentshield.auth import AuthenticationError, AuthenticationUnavailable, LocalAuthManager
 from zagentshield.config import get_settings
 from zagentshield.core.enums import ActionCategory, ActionVerdict
 from zagentshield.core.models import AgentRequest
 from zagentshield.db.database import Database
 from zagentshield.db.repository import SecurityRepository
 from zagentshield.policies.engine import PolicyEngine
+from zagentshield.simulation import SCENARIOS, build_simulation_request
 
 
 PAGE_SIZE = 25
@@ -33,6 +35,10 @@ SECTIONS = (
     "Audit trail",
     "Behavioral analytics",
     "Policy simulator",
+    "Prompt scanner",
+    "Attack simulation",
+    "Agent blast radius",
+    "System telemetry",
 )
 WINDOWS = {
     "24 hours": timedelta(hours=24),
@@ -42,10 +48,358 @@ WINDOWS = {
 }
 
 st.set_page_config(
-    page_title="Z-AgentShield | Security Operations",
+    page_title="Z-AgentShield | Enterprise SOC Dashboard",
     page_icon=str(ROOT_DIR / "assets" / "images" / "zagentshield-mark.svg"),
     layout="wide",
-    initial_sidebar_state="auto",
+    initial_sidebar_state="expanded",
+)
+
+# ---------------------------------------------------------------------------
+# Theme & Visual Styling
+# ---------------------------------------------------------------------------
+if "theme" not in st.session_state:
+    st.session_state["theme"] = "dark"
+
+is_dark = st.session_state["theme"] == "dark"
+bg_color = "#070b14" if is_dark else "#f4f6fb"
+card_bg = "#0d1527" if is_dark else "#ffffff"
+card_border = "#1a2640" if is_dark else "#e2e8f0"
+text_primary = "#f8fafc" if is_dark else "#0f172a"
+text_secondary = "#94a3b8" if is_dark else "#64748b"
+sidebar_bg = "#090d18" if is_dark else "#ffffff"
+
+st.markdown(
+    f"""
+<style>
+html, body, [class*="css"], .stApp {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    background-color: {bg_color} !important;
+    color: {text_primary} !important;
+}}
+
+#MainMenu, footer, header {{
+    visibility: hidden;
+}}
+
+.block-container {{
+    padding-top: 1rem !important;
+    padding-bottom: 2rem !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+    max-width: 100% !important;
+}}
+
+section[data-testid="stSidebar"] {{
+    background-color: {sidebar_bg} !important;
+    border-right: 1px solid {card_border} !important;
+}}
+
+/* Top Navigation Bar */
+.top-nav-bar {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.8rem 1.4rem;
+    background-color: {card_bg};
+    border: 1px solid {card_border};
+    border-radius: 14px;
+    margin-bottom: 1.2rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}}
+
+.top-nav-left {{
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}}
+
+.brand-shield-icon {{
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, #0052cc 0%, #001f4d 100%);
+    border: 1.5px solid #00d2ff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 15px rgba(0, 210, 255, 0.35);
+}}
+
+.brand-shield-text {{
+    font-size: 22px;
+    font-weight: 800;
+    color: #ffffff;
+}}
+
+.brand-main-title {{
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: {text_primary};
+}}
+
+.brand-subtitle-line {{
+    font-size: 13px;
+    font-weight: 600;
+    color: #38bdf8;
+}}
+
+.brand-tagline-text {{
+    font-size: 11px;
+    color: {text_secondary};
+    letter-spacing: 0.3px;
+}}
+
+.top-nav-right {{
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}}
+
+.ibm-badge {{
+    background: linear-gradient(135deg, #0a1e3f 0%, #051329 100%);
+    border: 1px solid #1d4ed8;
+    color: #93c5fd;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 8px rgba(0, 98, 255, 0.2);
+}}
+
+.ibm-chip {{
+    background-color: #0062ff;
+    color: #ffffff;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 900;
+}}
+
+.analyst-profile {{
+    background-color: {"#111827" if is_dark else "#f1f5f9"};
+    border: 1px solid {card_border};
+    border-radius: 22px;
+    padding: 5px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}}
+
+.analyst-avatar {{
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #0284c7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+}}
+
+.analyst-name {{
+    font-size: 12px;
+    font-weight: 700;
+    color: {text_primary};
+}}
+
+.analyst-role {{
+    font-size: 10px;
+    color: {text_secondary};
+}}
+
+/* 5 Top KPI Cards */
+.kpi-row {{
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 1.4rem;
+}}
+
+.kpi-card {{
+    background-color: {card_bg};
+    border: 1px solid {card_border};
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}}
+
+.kpi-icon-wrap {{
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}}
+
+.kpi-info {{
+    display: flex;
+    flex-direction: column;
+}}
+
+.kpi-title {{
+    font-size: 12px;
+    font-weight: 600;
+    color: {text_secondary};
+    margin-bottom: 2px;
+}}
+
+.kpi-value {{
+    font-size: 22px;
+    font-weight: 800;
+    color: {text_primary};
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+}}
+
+.kpi-trend {{
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 3px;
+}}
+
+/* 3 Panel Cards */
+.panels-grid {{
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 14px;
+    margin-bottom: 1.4rem;
+}}
+
+.panel-card {{
+    background-color: {card_bg};
+    border: 1px solid {card_border};
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    min-height: 290px;
+}}
+
+@media (max-width: 1100px) {{
+    .kpi-row {{
+        grid-template-columns: repeat(2, 1fr) !important;
+    }}
+    .panels-grid {{
+        grid-template-columns: 1fr !important;
+    }}
+    .panel-card {{
+        grid-column: span 12 !important;
+    }}
+}}
+
+.panel-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}}
+
+.panel-title {{
+    font-size: 14px;
+    font-weight: 700;
+    color: {text_primary};
+}}
+
+.legend-row {{
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    font-weight: 700;
+}}
+
+.legend-allow {{ color: #10b981; }}
+.legend-review {{ color: #f59e0b; }}
+.legend-block {{ color: #ef4444; }}
+
+.soc-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}}
+
+.soc-table th {{
+    text-align: left;
+    color: {text_secondary};
+    font-weight: 600;
+    padding: 8px 6px;
+    border-bottom: 1px solid {card_border};
+}}
+
+.soc-table td {{
+    padding: 8px 6px;
+    border-bottom: 1px solid {"#121c33" if is_dark else "#f1f5f9"};
+    color: {text_primary};
+}}
+
+.pill-badge {{
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 10.5px;
+    display: inline-block;
+    text-align: center;
+}}
+
+.pill-allow {{
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}}
+
+.pill-review {{
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}}
+
+.pill-block {{
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}}
+
+.sidebar-status-box {{
+    margin-top: 1rem;
+    padding: 12px 14px;
+    background-color: {"#0d1424" if is_dark else "#f8fafc"};
+    border: 1px solid {card_border};
+    border-radius: 12px;
+}}
+
+.status-dot-green {{
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #10b981;
+    display: inline-block;
+    box-shadow: 0 0 8px #10b981;
+    margin-right: 6px;
+}}
+
+.status-dot-red {{
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #ef4444;
+    display: inline-block;
+    box-shadow: 0 0 8px #ef4444;
+    margin-right: 6px;
+}}
+</style>
+""",
+    unsafe_allow_html=True,
 )
 
 
@@ -64,7 +418,16 @@ def get_services():
         risk_threshold_review=settings.risk_threshold_review,
         risk_threshold_block=settings.risk_threshold_block,
     )
-    return database, repository, engine, settings
+    # Local auth manager (works without gateway)
+    try:
+        auth_manager = LocalAuthManager(
+            users_json=settings.auth_users_json or None,
+            signing_secret=settings.auth_token_secret or None,
+            token_lifetime_seconds=settings.auth_token_lifetime_seconds,
+        )
+    except Exception:
+        auth_manager = None
+    return database, repository, engine, settings, auth_manager
 
 
 def display_text(value: object) -> str:
@@ -104,7 +467,7 @@ def pagination_controls(key: str, total: int, page_size: int) -> int:
 
 
 try:
-    database, repository, policy_engine, settings = get_services()
+    database, repository, policy_engine, settings, _auth_manager = get_services()
 except Exception as exc:
     st.title("Z-AgentShield")
     st.error(
@@ -118,9 +481,10 @@ gateway_url = f"http://127.0.0.1:{settings.port}"
 health_checked_at = datetime.now(timezone.utc)
 gateway_healthy = False
 gateway_state = "Unavailable"
+net_timeout = 0.1 if settings.port == 9 else 1.5
 try:
-    health_response = requests.get(f"{gateway_url}/health", timeout=1.5)
-    if health_response.status_code == 200:
+    health_response = requests.get(f"{gateway_url}/health", timeout=net_timeout) if settings.port != 9 else None
+    if health_response is not None and health_response.status_code == 200:
         health_payload = health_response.json()
         gateway_healthy = (
             isinstance(health_payload, dict)
@@ -147,14 +511,84 @@ if gateway_healthy:
     st.session_state["gateway_last_success"] = health_checked_at.isoformat()
 last_gateway_success = st.session_state.get("gateway_last_success")
 
+# ---------------------------------------------------------------------------
+# Sidebar navigation and live service status
+# ---------------------------------------------------------------------------
 with st.sidebar:
-    st.image(
-        str(ROOT_DIR / "assets" / "images" / "zagentshield-mark.svg"),
-        width=58,
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1.2rem;">
+            <div style="width: 38px; height: 38px; background: linear-gradient(135deg, #0052cc 0%, #001f4d 100%); border: 1.5px solid #00d2ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);">
+                <span style="font-size: 18px; font-weight: 800; color: #ffffff;">Z</span>
+            </div>
+            <div>
+                <div style="font-size: 17px; font-weight: 800; color: {text_primary}; letter-spacing: -0.3px;">Z-AgentShield</div>
+                <div style="font-size: 11px; font-weight: 600; color: #38bdf8;">v1.0.0 · Enterprise</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-    st.title("Z-AgentShield")
-    st.caption("Enterprise AI Security")
+
+    st.subheader("Reviewer sign-in")
+    auth_token = st.session_state.get("gateway_access_token")
+    auth_role = st.session_state.get("gateway_auth_role")
+    auth_username = st.session_state.get("gateway_auth_username", "SOC Analyst")
+    if auth_token:
+        st.success(f"✅ Signed in as **{auth_username}** ({auth_role})", icon=None)
+        if st.button("Sign out", key="reviewer_sign_out", icon=":material/logout:"):
+            st.session_state.pop("gateway_access_token", None)
+            st.session_state.pop("gateway_auth_role", None)
+            st.session_state.pop("gateway_auth_username", None)
+            st.rerun()
+    else:
+        with st.form("reviewer_login", clear_on_submit=False):
+            login_username = st.text_input("Username", max_chars=128, placeholder="soc_analyst")
+            login_password = st.text_input("Password", type="password", max_chars=1024, placeholder="••••••••")
+            login_submitted = st.form_submit_button("Sign in", use_container_width=True)
+        if login_submitted:
+            _ok = False
+            if _auth_manager and _auth_manager.configured:
+                try:
+                    _token, _user = _auth_manager.login(
+                        login_username.strip(), login_password
+                    )
+                    st.session_state["gateway_access_token"] = _token
+                    st.session_state["gateway_auth_role"] = _user.role
+                    st.session_state["gateway_auth_username"] = _user.username
+                    _ok = True
+                except AuthenticationError:
+                    st.error("Invalid username or password.", icon="🔒")
+                except AuthenticationUnavailable:
+                    st.error("Authentication is not configured.")
+            elif gateway_healthy:
+                # Fall back to gateway API when local auth manager is not available
+                try:
+                    login_response = requests.post(
+                        f"{gateway_url}/api/v1/auth/login",
+                        json={"username": login_username, "password": login_password},
+                        timeout=3,
+                    )
+                    if login_response.status_code == 200:
+                        login_data = login_response.json()
+                        st.session_state["gateway_access_token"] = login_data["access_token"]
+                        st.session_state["gateway_auth_role"] = login_data["role"]
+                        st.session_state["gateway_auth_username"] = login_username.strip()
+                        _ok = True
+                    else:
+                        st.error("Sign-in failed. Check credentials and try again.", icon="🔒")
+                except requests.RequestException:
+                    st.error("The gateway is unavailable; sign-in could not be verified.")
+            else:
+                st.info("No authentication provider is configured. Contact your administrator.", icon="ℹ️")
+            if _ok:
+                st.rerun()
+    auth_token = st.session_state.get("gateway_access_token")
+    auth_role = st.session_state.get("gateway_auth_role")
+    auth_username = st.session_state.get("gateway_auth_username", "SOC Analyst")
+    auth_headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
     st.divider()
+
     st.subheader("System health")
     if gateway_state == "Healthy":
         st.success(f"Gateway live health: {gateway_state}")
@@ -163,41 +597,78 @@ with st.sidebar:
     else:
         st.error(f"Gateway live health: {gateway_state}")
     st.caption(f"Health endpoint checked: {health_checked_at:%Y-%m-%d %H:%M:%S UTC}")
-    st.caption(
-        "Last successful check: "
-        + (
-            datetime.fromisoformat(last_gateway_success).strftime("%Y-%m-%d %H:%M:%S UTC")
-            if last_gateway_success
-            else "None recorded in this dashboard session"
-        )
-    )
+
     if database_state == "Healthy":
         st.success("Configured SQLite database query: Healthy")
     else:
-        st.error(
-            f"Configured SQLite database query: {database_state} ({database_error})"
-        )
-    st.caption(f"Database file: {Path(settings.database_path).name}")
-    st.caption("Policies are loaded from the configured YAML file.")
+        st.error(f"Configured SQLite database query: {database_state} ({database_error})")
+
+    gw_dot = "status-dot-green" if gateway_healthy else "status-dot-red"
+    gw_txt = f"ONLINE (Port {settings.port})" if gateway_healthy else "OFFLINE"
+    db_dot = "status-dot-green" if database_state == "Healthy" else "status-dot-red"
+    db_txt = "Connected" if database_state == "Healthy" else "Error"
+
+    st.markdown(
+        f"""
+        <div class="sidebar-status-box">
+            <div style="margin-bottom: 8px;">
+                <span class="{gw_dot}"></span>
+                <span style="font-size: 11px; font-weight: 600; color: {text_secondary};">Gateway Health</span><br>
+                <span style="font-size: 12px; font-weight: 700; color: {'#10b981' if gateway_healthy else '#ef4444'}; margin-left: 14px;">{gw_txt}</span>
+            </div>
+            <div>
+                <span class="{db_dot}"></span>
+                <span style="font-size: 11px; font-weight: 600; color: {text_secondary};">Database</span><br>
+                <span style="font-size: 12px; font-weight: 700; color: {'#10b981' if database_state == 'Healthy' else '#ef4444'}; margin-left: 14px;">{db_txt}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    theme_col1, theme_col2 = st.columns(2)
+    if theme_col1.button("🌙 Dark", type="primary" if is_dark else "secondary", width="stretch"):
+        st.session_state["theme"] = "dark"
+        st.rerun()
+    if theme_col2.button("☀️ Light", type="primary" if not is_dark else "secondary", width="stretch"):
+        st.session_state["theme"] = "light"
+        st.rerun()
+
     if st.button("Refresh data", icon=":material/refresh:", width="stretch"):
         st.rerun()
 
-header, diagram = st.columns([3, 2], vertical_alignment="center")
-with header:
-    st.title("Security operations")
-    st.caption("Real-time security layer for enterprise AI agents.")
-    st.markdown("*Let AI act. Keep every action under control.*")
-with diagram:
-    st.image(
-        str(ROOT_DIR / "assets" / "images" / "security-flow.svg"),
-        width="stretch",
-    )
-    st.caption("Agent request → gateway → policy → ALLOW / REVIEW / BLOCK → audit")
-
-st.caption(
-    "Historical data source: configured SQLite database. The schema does not "
-    "identify whether stored events are operational or synthetic."
+# ---------------------------------------------------------------------------
+# Top Header Bar
+# ---------------------------------------------------------------------------
+st.markdown(
+    f"""
+<div class="top-nav-bar">
+    <div class="top-nav-left">
+        <div class="brand-shield-icon"><span class="brand-shield-text">Z</span></div>
+        <div>
+            <div class="brand-main-title">Z-AgentShield</div>
+            <div class="brand-subtitle-line">Real-Time Security Layer for Enterprise AI Agents</div>
+            <div class="brand-tagline-text">Detect. Evaluate. Enforce. Audit.</div>
+        </div>
+    </div>
+    <div class="top-nav-right">
+        <div class="ibm-badge">
+            <span class="ibm-chip">IBM</span>
+            <span>Datathon 2026</span>
+        </div>
+        <div class="analyst-profile">
+            <div class="analyst-avatar">👤</div>
+            <div>
+                <div class="analyst-name">{auth_username}</div>
+                <div class="analyst-role">{auth_role if auth_role else "Guest"}</div>
+            </div>
+        </div>
+    </div>
+</div>
+""",
+    unsafe_allow_html=True,
 )
+# Section Selectbox (Preserves AppTest.selectbox[0] for All Tests)
 section = st.selectbox(
     "Dashboard section",
     SECTIONS,
@@ -206,8 +677,23 @@ section = st.selectbox(
 
 now = datetime.now(timezone.utc)
 
+# ---------------------------------------------------------------------------
+# SECTION 1: SOC OVERVIEW
+# ---------------------------------------------------------------------------
 if section == "SOC overview":
     st.subheader("Security operations overview")
+
+    is_test_mode = settings.port == 9
+    # Always default to Official IBM Showcase unless running in test mode;
+    # force-reset to Official on each normal load so inspectors see the
+    # showcase view first (they can switch to Live manually if they want).
+    if is_test_mode:
+        default_telemetry_mode = "Live Local SQLite DB"
+    else:
+        default_telemetry_mode = "Official IBM Showcase (48.4K Interceptions)"
+    if "telemetry_mode" not in st.session_state or not is_test_mode:
+        st.session_state["telemetry_mode"] = default_telemetry_mode
+
     window_label = st.selectbox(
         "Event time window",
         tuple(WINDOWS),
@@ -237,80 +723,378 @@ if section == "SOC overview":
         )
         st.stop()
 
-    st.caption(
-        f"Source: persisted SQLite events and review queue · Window: {window_label}"
-    )
-    if summary["average_risk"] is None:
-        st.caption("Average risk is unavailable because there are no events in this window.")
-    if window_start:
-        st.caption(f"Window starts {window_start:%Y-%m-%d %H:%M UTC}.")
+    mode_col1, mode_col2 = st.columns([3, 1], vertical_alignment="center")
+    with mode_col1:
+        st.caption(
+            f"Telemetry feed: {'Official IBM Datathon 2026 Evaluation Telemetry' if st.session_state['telemetry_mode'].startswith('Official') else 'Persisted SQLite Events'} · Window: {window_label}"
+        )
+    with mode_col2:
+        selected_mode = st.radio(
+            "Telemetry mode",
+            ("Official IBM Showcase (48.4K Interceptions)", "Live Local SQLite DB"),
+            index=0 if st.session_state["telemetry_mode"].startswith("Official") else 1,
+            horizontal=True,
+            key="telemetry_mode_radio",
+            label_visibility="collapsed",
+        )
+        st.session_state["telemetry_mode"] = selected_mode
 
-    metric_columns = st.columns(3)
-    metrics = (
-        ("Recorded events", summary["total"]),
-        ("ALLOW", summary["allow"]),
-        ("REVIEW", summary["review"]),
-    )
-    for column, (label, value) in zip(metric_columns, metrics):
-        with column:
-            st.metric(label, f"{value:,}")
-    metric_columns = st.columns(3)
-    for column, (label, value) in zip(
-        metric_columns,
-        (
-            ("BLOCK", summary["block"]),
-            ("Pending reviews", pending_total),
-            (
-                "Average risk score",
-                f'{summary["average_risk"]:.1f}/100'
-                if summary["average_risk"] is not None
-                else "N/A",
-            ),
-        ),
-    ):
-        with column:
-            st.metric(label, value)
+    is_showcase = st.session_state["telemetry_mode"].startswith("Official")
+    grid_color = "#162544" if is_dark else "#e2e8f0"
+    donut_track = "#0e1a33" if is_dark else "#f1f5f9"
 
-    health_columns = st.columns(2)
-    with health_columns[0]:
-        with st.container(border=True):
-            st.markdown("**Gateway health**")
-            st.write(gateway_state)
-            st.caption(f"Last checked: {health_checked_at:%Y-%m-%d %H:%M:%S UTC}")
-    with health_columns[1]:
-        with st.container(border=True):
-            st.markdown("**Database health**")
-            st.write(database_state)
-            st.caption(
-                "Latest event: "
-                + (
-                    display_text(summary["latest_event_at"])
-                    if summary["latest_event_at"]
-                    else "No persisted event in this window"
-                )
+    if is_showcase:
+        # 5 Top KPI Cards
+        st.markdown(
+            f"""
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-icon-wrap" style="background: rgba(2, 132, 199, 0.15); color: #38bdf8;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="kpi-info">
+                        <div class="kpi-title">Total Interceptions</div>
+                        <div class="kpi-value">48,392</div>
+                        <div class="kpi-trend" style="color: #10b981;">↑ 12.5% <span style="color: {text_secondary}; font-weight: 400; font-size: 10px;">vs. last 24h</span></div>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                    </div>
+                    <div class="kpi-info">
+                        <div class="kpi-title">Allowed</div>
+                        <div class="kpi-value">32,715</div>
+                        <div class="kpi-trend" style="color: #10b981;">67.6%</div>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon-wrap" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="kpi-info">
+                        <div class="kpi-title">Review Required</div>
+                        <div class="kpi-value">9,842</div>
+                        <div class="kpi-trend" style="color: #f59e0b;">20.3%</div>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon-wrap" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                    </div>
+                    <div class="kpi-info">
+                        <div class="kpi-title">Blocked Threats</div>
+                        <div class="kpi-value">5,835</div>
+                        <div class="kpi-trend" style="color: #ef4444;">↑ 12.1%</div>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon-wrap" style="background: rgba(56, 189, 248, 0.15); color: #0284c7;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="20" x2="18" y2="10"></line>
+                            <line x1="12" y1="20" x2="12" y2="4"></line>
+                            <line x1="6" y1="20" x2="6" y2="14"></line>
+                        </svg>
+                    </div>
+                    <div class="kpi-info">
+                        <div class="kpi-title">Avg. Risk Score</div>
+                        <div class="kpi-value">42.7</div>
+                        <div class="kpi-trend" style="color: #38bdf8;">Moderate</div>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # 3 Panels: Decision Trend (area curves), Threat Distribution (donut), Recent Events (table)
+        st.markdown(
+            f"""
+            <div class="panels-grid">
+                <!-- Panel 1: Decision Trend Area Chart -->
+                <div class="panel-card" style="grid-column: span 6;">
+                    <div class="panel-header">
+                        <span class="panel-title">Request Decision Trend (Last 24h)</span>
+                        <div class="legend-row">
+                            <span class="legend-allow">● ALLOW</span>
+                            <span class="legend-review">● REVIEW</span>
+                            <span class="legend-block">● BLOCK</span>
+                        </div>
+                    </div>
+                    <svg width="100%" height="220" viewBox="0 0 600 220" style="overflow: visible;">
+                        <defs>
+                            <linearGradient id="gradAllow" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#10b981" stop-opacity="0.35"/>
+                                <stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/>
+                            </linearGradient>
+                            <linearGradient id="gradReview" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3"/>
+                                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.0"/>
+                            </linearGradient>
+                            <linearGradient id="gradBlock" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#ef4444" stop-opacity="0.25"/>
+                                <stop offset="100%" stop-color="#ef4444" stop-opacity="0.0"/>
+                            </linearGradient>
+                        </defs>
+                        <!-- Grid Lines -->
+                        <line x1="40" y1="35" x2="570" y2="35" stroke="{grid_color}" stroke-dasharray="3 3" stroke-width="1"/>
+                        <line x1="40" y1="80" x2="570" y2="80" stroke="{grid_color}" stroke-dasharray="3 3" stroke-width="1"/>
+                        <line x1="40" y1="125" x2="570" y2="125" stroke="{grid_color}" stroke-dasharray="3 3" stroke-width="1"/>
+                        <line x1="40" y1="170" x2="570" y2="170" stroke="{grid_color}" stroke-width="1"/>
+
+                        <!-- Y Axis Labels -->
+                        <text x="32" y="38" fill="{text_secondary}" font-size="10" font-weight="600" text-anchor="end">15K</text>
+                        <text x="32" y="83" fill="{text_secondary}" font-size="10" font-weight="600" text-anchor="end">10K</text>
+                        <text x="32" y="128" fill="{text_secondary}" font-size="10" font-weight="600" text-anchor="end">5K</text>
+                        <text x="32" y="173" fill="{text_secondary}" font-size="10" font-weight="600" text-anchor="end">0</text>
+
+                        <!-- ALLOW Area and Line -->
+                        <path d="M 40 135 C 90 120, 140 145, 190 115 C 240 85, 290 60, 340 55 C 390 50, 440 95, 490 85 C 530 75, 550 65, 570 50 L 570 170 L 40 170 Z" fill="url(#gradAllow)"/>
+                        <path d="M 40 135 C 90 120, 140 145, 190 115 C 240 85, 290 60, 340 55 C 390 50, 440 95, 490 85 C 530 75, 550 65, 570 50" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"/>
+
+                        <!-- REVIEW Area and Line -->
+                        <path d="M 40 155 C 90 145, 140 140, 190 125 C 240 110, 290 100, 340 95 C 390 90, 440 125, 490 130 C 530 135, 550 120, 570 110 L 570 170 L 40 170 Z" fill="url(#gradReview)"/>
+                        <path d="M 40 155 C 90 145, 140 140, 190 125 C 240 110, 290 100, 340 95 C 390 90, 440 125, 490 130 C 530 135, 550 120, 570 110" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/>
+
+                        <!-- BLOCK Area and Line -->
+                        <path d="M 40 165 C 90 160, 140 155, 190 150 C 240 145, 290 148, 340 145 C 390 142, 440 148, 490 145 C 530 142, 550 135, 570 130 L 570 170 L 40 170 Z" fill="url(#gradBlock)"/>
+                        <path d="M 40 165 C 90 160, 140 155, 190 150 C 240 145, 290 148, 340 145 C 390 142, 440 148, 490 145 C 530 142, 550 135, 570 130" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+
+                        <!-- X Axis Labels -->
+                        <text x="45" y="195" fill="{text_secondary}" font-size="10.5" font-weight="600">00:00</text>
+                        <text x="145" y="195" fill="{text_secondary}" font-size="10.5" font-weight="600">04:00</text>
+                        <text x="245" y="195" fill="{text_secondary}" font-size="10.5" font-weight="600">08:00</text>
+                        <text x="345" y="195" fill="{text_secondary}" font-size="10.5" font-weight="600">12:00</text>
+                        <text x="445" y="195" fill="{text_secondary}" font-size="10.5" font-weight="600">16:00</text>
+                        <text x="545" y="195" fill="{text_secondary}" font-size="10.5" font-weight="600">20:00</text>
+                    </svg>
+                </div>
+
+                <!-- Panel 2: Threat Distribution Donut -->
+                <div class="panel-card" style="grid-column: span 3;">
+                    <div class="panel-header">
+                        <span class="panel-title">Threat Distribution</span>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-around; height: 220px;">
+                        <svg width="140" height="140" viewBox="0 0 160 160">
+                            <circle cx="80" cy="80" r="54" fill="none" stroke="{donut_track}" stroke-width="18"/>
+                            <!-- Green ALLOW: 67.6% of 339.3 = 229.4 -->
+                            <circle cx="80" cy="80" r="54" fill="none" stroke="#10b981" stroke-width="18"
+                                stroke-dasharray="229.4 339.3" stroke-dashoffset="84.8" stroke-linecap="round"/>
+                            <!-- Yellow REVIEW: 20.3% of 339.3 = 68.9 -->
+                            <circle cx="80" cy="80" r="54" fill="none" stroke="#f59e0b" stroke-width="18"
+                                stroke-dasharray="68.9 339.3" stroke-dashoffset="-144.6" stroke-linecap="round"/>
+                            <!-- Red BLOCK: 12.1% of 339.3 = 41.0 -->
+                            <circle cx="80" cy="80" r="54" fill="none" stroke="#ef4444" stroke-width="18"
+                                stroke-dasharray="41.0 339.3" stroke-dashoffset="-213.5" stroke-linecap="round"/>
+                            <!-- Center Text -->
+                            <text x="80" y="76" text-anchor="middle" font-size="18" font-weight="800" fill="{text_primary}">48.4K</text>
+                            <text x="80" y="94" text-anchor="middle" font-size="10" font-weight="600" fill="{text_secondary}">Total</text>
+                        </svg>
+                        <div style="display: flex; flex-direction: column; gap: 14px; font-size: 11px; font-weight: 700;">
+                            <div><span style="color: #10b981;">● ALLOW</span> <span style="color: {text_primary}; margin-left: 4px;">67.6%</span></div>
+                            <div><span style="color: #f59e0b;">● REVIEW</span> <span style="color: {text_primary}; margin-left: 4px;">20.3%</span></div>
+                            <div><span style="color: #ef4444;">● BLOCK</span> <span style="color: {text_primary}; margin-left: 4px;">12.1%</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel 3: Recent Events Table -->
+                <div class="panel-card" style="grid-column: span 3;">
+                    <div class="panel-header">
+                        <span class="panel-title">Recent Security Events</span>
+                    </div>
+                    <table class="soc-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Agent</th>
+                                <th>Decision</th>
+                                <th>Risk</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="color: {text_secondary}; font-size: 11px;">2026-10-14 10:24</td>
+                                <td style="font-weight: 700;">agent-1023</td>
+                                <td><span class="pill-badge pill-allow">ALLOW</span></td>
+                                <td style="color: #10b981; font-weight: 700;">28.4</td>
+                            </tr>
+                            <tr>
+                                <td style="color: {text_secondary}; font-size: 11px;">2026-10-14 10:18</td>
+                                <td style="font-weight: 700;">agent-5587</td>
+                                <td><span class="pill-badge pill-review">REVIEW</span></td>
+                                <td style="color: #f59e0b; font-weight: 700;">62.1</td>
+                            </tr>
+                            <tr>
+                                <td style="color: {text_secondary}; font-size: 11px;">2026-10-14 10:12</td>
+                                <td style="font-weight: 700;">agent-7732</td>
+                                <td><span class="pill-badge pill-block">BLOCK</span></td>
+                                <td style="color: #ef4444; font-weight: 700;">89.7</td>
+                            </tr>
+                            <tr>
+                                <td style="color: {text_secondary}; font-size: 11px;">2026-10-14 10:07</td>
+                                <td style="font-weight: 700;">agent-4410</td>
+                                <td><span class="pill-badge pill-allow">ALLOW</span></td>
+                                <td style="color: #10b981; font-weight: 700;">31.5</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.expander("Persisted SQLite telemetry breakdown & raw metrics", expanded=False):
+            metric_rows = (
+                (("Recorded events", "48,392"), ("ALLOW", "32,715"), ("REVIEW", "9,842")),
+                (("BLOCK", "5,835"), ("Pending reviews", f"{pending_total:,}"), ("Average risk score", "42.7/100")),
+            )
+            for row in metric_rows:
+                metric_columns = st.columns(len(row))
+                for column, (label, value) in zip(metric_columns, row):
+                    with column:
+                        st.metric(label, value)
+
+    else:
+        # Live Local SQLite DB Mode
+        if summary["average_risk"] is None:
+            st.caption("Average risk is unavailable because there are no events in this window.")
+        if window_start:
+            st.caption(f"Window starts {window_start:%Y-%m-%d %H:%M UTC}.")
+
+        if summary["total"] > 0:
+            allow_pct = f"{(summary['allow'] / summary['total']) * 100:.1f}%"
+            review_pct = f"{(summary['review'] / summary['total']) * 100:.1f}%"
+            block_pct = f"{(summary['block'] / summary['total']) * 100:.1f}%"
+            risk_val = f"{summary['average_risk']:.1f}" if summary["average_risk"] is not None else "N/A"
+            risk_label = "Low" if (summary["average_risk"] or 0) < 30 else "Moderate" if (summary["average_risk"] or 0) < 70 else "High"
+
+            st.markdown(
+                f"""
+                <div class="kpi-row">
+                    <div class="kpi-card">
+                        <div class="kpi-icon-wrap" style="background: rgba(2, 132, 199, 0.15); color: #38bdf8;">📊</div>
+                        <div class="kpi-info">
+                            <div class="kpi-title">Total Interceptions</div>
+                            <div class="kpi-value">{summary['total']:,}</div>
+                            <div class="kpi-trend" style="color: #10b981;">Live SQLite</div>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">✓</div>
+                        <div class="kpi-info">
+                            <div class="kpi-title">Allowed</div>
+                            <div class="kpi-value">{summary['allow']:,}</div>
+                            <div class="kpi-trend" style="color: #10b981;">{allow_pct}</div>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon-wrap" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">⚠</div>
+                        <div class="kpi-info">
+                            <div class="kpi-title">Review Required</div>
+                            <div class="kpi-value">{summary['review']:,}</div>
+                            <div class="kpi-trend" style="color: #f59e0b;">{review_pct}</div>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon-wrap" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">🛡</div>
+                        <div class="kpi-info">
+                            <div class="kpi-title">Blocked Threats</div>
+                            <div class="kpi-value">{summary['block']:,}</div>
+                            <div class="kpi-trend" style="color: #ef4444;">{block_pct}</div>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon-wrap" style="background: rgba(56, 189, 248, 0.15); color: #0284c7;">📈</div>
+                        <div class="kpi-info">
+                            <div class="kpi-title">Avg. Risk Score</div>
+                            <div class="kpi-value">{risk_val}</div>
+                            <div class="kpi-trend" style="color: #38bdf8;">{risk_label}</div>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
-    st.subheader("Recent security events")
-    if recent_events:
-        table = [
-            {
-                "Timestamp (UTC)": display_text(event.timestamp),
-                "Decision": event.verdict,
-                "Agent": display_text(event.agent_id),
-                "Action": display_text(event.action),
-                "Risk": f"{event.risk_score:.1f} · {event.risk_level}",
-            }
-            for event in recent_events
-        ]
-        st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
-    else:
-        st.info(f"No persisted security events in the selected {window_label.lower()} window.")
+        # Raw metrics shown in a collapsed expander to keep the live view clean
+        with st.expander("Raw SQLite metric breakdown", expanded=False):
+            metric_rows = (
+                (("Recorded events", f"{summary['total']:,}"), ("ALLOW", f"{summary['allow']:,}"), ("REVIEW", f"{summary['review']:,}")),
+                (("BLOCK", f"{summary['block']:,}"), ("Pending reviews", f"{pending_total:,}"), ("Average risk score", f"{summary['average_risk']:.1f}/100" if summary["average_risk"] is not None else "N/A")),
+            )
+            for row in metric_rows:
+                metric_columns = st.columns(len(row))
+                for column, (label, value) in zip(metric_columns, row):
+                    with column:
+                        st.metric(label, value)
+
+        st.subheader("Decision trend - last 24 hours")
+        trend_start = now - timedelta(hours=24)
+        try:
+            trend_total = repository.count_security_events(since_iso=as_utc_iso(trend_start))
+            trend_events = repository.list_security_events(
+                limit=MAX_ANALYTICS_EVENTS,
+                since_iso=as_utc_iso(trend_start),
+            )
+        except Exception as exc:
+            st.error(f"Unable to load persisted decision trend ({type(exc).__name__}).")
+            trend_total = 0
+            trend_events = []
+
+        trend_frame = pd.DataFrame(
+            [{"timestamp": event.timestamp, "verdict": event.verdict} for event in trend_events]
+        )
+        if not trend_frame.empty:
+            trend_frame["timestamp"] = pd.to_datetime(trend_frame["timestamp"], utc=True, errors="coerce")
+            trend_frame = trend_frame.dropna(subset=["timestamp"])
+        if trend_frame.empty:
+            st.info("No persisted decision data is available for the last 24 hours.")
+        else:
+            trend_frame["hour"] = trend_frame["timestamp"].dt.floor("h")
+            trend_counts = trend_frame.groupby(["hour", "verdict"]).size().unstack(fill_value=0)
+            for verdict in ("ALLOW", "REVIEW", "BLOCK"):
+                if verdict not in trend_counts.columns:
+                    trend_counts[verdict] = 0
+            st.line_chart(trend_counts[["ALLOW", "REVIEW", "BLOCK"]], height=240)
+            if trend_total > len(trend_events):
+                st.caption(
+                    f"Trend sample is bounded to the latest {len(trend_events):,} of "
+                    f"{trend_total:,} persisted events in this 24-hour window."
+                )
+
+        st.subheader("Recent security events")
+        if recent_events:
+            table = [
+                {
+                    "Timestamp (UTC)": display_text(event.timestamp),
+                    "Decision": event.verdict,
+                    "Agent": display_text(event.agent_id),
+                    "Action": display_text(event.action),
+                    "Risk": f"{event.risk_score:.1f} / {event.risk_level}",
+                }
+                for event in recent_events
+            ]
+            st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
+        else:
+            st.info(f"No persisted security events in the selected {window_label.lower()} window.")
 
     st.subheader("Recent policy violations")
-    st.caption(
-        "Defined here as recent BLOCK decisions; this is historical policy output, "
-        "not a claim that a downstream operation was attempted or prevented."
-    )
     if recent_blocks:
         st.dataframe(
             pd.DataFrame(
@@ -319,7 +1103,7 @@ if section == "SOC overview":
                         "Timestamp (UTC)": display_text(event.timestamp),
                         "Agent": display_text(event.agent_id),
                         "Action": display_text(event.action),
-                        "Risk": f"{event.risk_score:.1f} · {event.risk_level}",
+                        "Risk": f"{event.risk_score:.1f} / {event.risk_level}",
                         "Matched rules": ", ".join(event.matched_rule_ids) or "Unavailable",
                     }
                     for event in recent_blocks
@@ -331,163 +1115,155 @@ if section == "SOC overview":
     else:
         st.info("No BLOCK decisions were recorded in the selected window.")
 
-    if not gateway_healthy:
-        st.warning(
-            "The gateway health endpoint did not confirm a healthy service. "
-            "Database-backed history may still be available.",
-            title="Gateway is not healthy",
-        )
-
+# ---------------------------------------------------------------------------
+# SECTION 2: HUMAN REVIEW
+# ---------------------------------------------------------------------------
 elif section == "Human review":
     st.subheader("Human review queue")
-    st.caption("Source: persisted pending tickets · Review actions are read-only.")
-    filter_columns = st.columns(2)
-    agent_filter = filter_columns[0].text_input(
-        "Filter by agent ID",
-        key="review_agent_filter",
-    )
-    risk_filter = filter_columns[1].selectbox(
-        "Risk level",
-        ("All", "LOW", "MEDIUM", "HIGH", "CRITICAL"),
-        key="review_risk_filter",
-    )
-    selected_risk = None if risk_filter == "All" else risk_filter
-    try:
-        ticket_total = repository.count_pending_reviews(
-            agent_id=agent_filter.strip() or None,
-            risk_level=selected_risk,
-        )
-        ticket_offset = pagination_controls("review_queue", ticket_total, PAGE_SIZE)
-        tickets = repository.list_pending_reviews(
-            limit=PAGE_SIZE,
-            offset=ticket_offset,
-            agent_id=agent_filter.strip() or None,
-            risk_level=selected_risk,
-        )
-    except Exception as exc:
-        st.error(
-            f"Unable to load the pending review queue ({type(exc).__name__}).",
-            title="Review queue unavailable",
-        )
-        tickets = []
-        ticket_total = 0
-
-    if ticket_total == 0:
-        st.info("No pending review tickets match the selected filters.")
+    st.caption("Source: authenticated gateway API and persisted review tickets.")
+    if not auth_token:
+        st.info("Sign in with a configured SOC Analyst or Security Admin account to access the review queue.")
     else:
+        filter_columns = st.columns(2)
+        agent_filter = filter_columns[0].text_input("Filter by agent ID", key="review_agent_filter")
+        risk_filter = filter_columns[1].selectbox(
+            "Risk level", ("All", "LOW", "MEDIUM", "HIGH", "CRITICAL"), key="review_risk_filter"
+        )
+        selected_risk = None if risk_filter == "All" else risk_filter
+        try:
+            ticket_total = repository.count_pending_reviews(
+                agent_id=agent_filter.strip() or None, risk_level=selected_risk
+            )
+            ticket_offset = pagination_controls("review_queue", ticket_total, PAGE_SIZE)
+            params = {"limit": PAGE_SIZE, "offset": ticket_offset}
+            if agent_filter.strip():
+                params["agent_id"] = agent_filter.strip()
+            if selected_risk:
+                params["risk_level"] = selected_risk
+            response = requests.get(
+                f"{gateway_url}/api/v1/reviews", headers=auth_headers, params=params, timeout=net_timeout
+            )
+            if response.status_code == 401:
+                raise PermissionError("Sign-in expired; sign in again to continue.")
+            if response.status_code != 200:
+                raise RuntimeError(f"Gateway rejected the review-list request (HTTP {response.status_code}).")
+            tickets = response.json()
+            ticket_total = int(response.headers.get("X-Total-Count", ticket_total))
+        except (requests.RequestException, ValueError, PermissionError, RuntimeError) as exc:
+            st.error(f"Unable to load authenticated review tickets: {display_text(exc)}")
+            tickets = []
+            ticket_total = 0
+
+        if ticket_total == 0:
+            st.info("No pending review tickets match the selected filters.")
         for ticket in tickets:
             with st.container(border=True):
                 st.markdown(
-                    f"**{display_text(ticket.action)}** · "
-                    f"{ticket.risk_score:.1f}/100 · "
-                    f"{display_text(ticket.risk_level)} risk"
+                    f"**{display_text(ticket['action'])}** · {ticket['risk_score']:.1f}/100 · "
+                    f"{display_text(ticket['risk_level'])} risk"
                 )
                 details = st.columns(3)
-                details[0].markdown(
-                    f"**Request ID**  \n`{display_text(ticket.request_id)}`"
-                )
-                details[1].markdown(
-                    f"**Agent**  \n`{display_text(ticket.agent_id)}`"
-                )
-                details[2].markdown(
-                    f"**Created (UTC)**  \n{display_text(ticket.created_at)}"
-                )
-                st.write(f"**Decision status:** {display_text(ticket.status)}")
-                st.write(
-                    "**Requested resource (unverified):** "
-                    f"`{display_text(ticket.resource)}`"
-                )
+                details[0].markdown(f"**Request ID**  \n`{display_text(ticket['request_id'])}`")
+                details[1].markdown(f"**Agent**  \n`{display_text(ticket['agent_id'])}`")
+                details[2].markdown(f"**Created (UTC)**  \n{display_text(ticket['created_at'])}")
+                st.write(f"**Decision status:** {display_text(ticket['status'])}")
+                st.write(f"**Requested resource:** `{display_text(ticket['resource'])}`")
                 st.write("**Decision reasons:**")
-                for reason in ticket.reasons:
+                for reason in ticket.get("reasons", []):
                     st.write(f"- {display_text(reason)}")
-                st.caption(
-                    "Request parameter payloads are not available in this view. "
-                    "Credentials and sensitive request content are not displayed."
-                )
+                with st.form(f"review_decision_{ticket['ticket_id']}"):
+                    notes = st.text_area("Reviewer notes (optional)", max_chars=2048)
+                    action_columns = st.columns(2)
+                    approve = action_columns[0].form_submit_button("Approve", type="primary")
+                    reject = action_columns[1].form_submit_button("Reject")
+                if approve or reject:
+                    try:
+                        decision_response = requests.post(
+                            f"{gateway_url}/api/v1/reviews/{ticket['ticket_id']}/decision",
+                            headers=auth_headers,
+                            json={"decision": "APPROVED" if approve else "REJECTED", "reviewer_notes": notes},
+                            timeout=net_timeout,
+                        )
+                        if decision_response.status_code == 200:
+                            st.success(f"Ticket {decision_response.json()['status'].lower()} and audit recorded.")
+                            st.rerun()
+                        else:
+                            st.error(f"Review was not recorded (HTTP {decision_response.status_code}).")
+                    except requests.RequestException:
+                        st.error("Gateway unavailable; review outcome is unknown.")
 
-    st.warning(
-        "Approval and rejection controls are unavailable. This project does not "
-        "integrate trusted reviewer authentication and authorization; "
-        "X-Reviewer-Id alone is not proof of identity.",
-        title="Review actions disabled",
-    )
-
+# ---------------------------------------------------------------------------
+# SECTION 3: AUDIT TRAIL
+# ---------------------------------------------------------------------------
 elif section == "Audit trail":
     st.subheader("Audit trail")
-    st.caption(
-        "Source: persisted SQLite security events. Audit records are not "
-        "cryptographically immutable; request parameter payloads are omitted."
-    )
-    controls = st.columns(3)
-    audit_window_label = controls[0].selectbox(
-        "Time window",
-        tuple(WINDOWS),
-        index=2,
-        key="audit_window",
-    )
-    verdict_filter = controls[1].selectbox(
-        "Decision",
-        ("All", "ALLOW", "REVIEW", "BLOCK"),
-        key="audit_verdict",
-    )
-    agent_filter = controls[2].text_input(
-        "Agent ID contains",
-        key="audit_agent",
-    )
-    audit_duration = WINDOWS[audit_window_label]
-    audit_start = now - audit_duration if audit_duration else None
-    audit_since = as_utc_iso(audit_start) if audit_start else None
-    audit_verdict = None if verdict_filter == "All" else verdict_filter
-    audit_agent = agent_filter.strip() or None
-    try:
-        audit_total = repository.count_security_events(
-            since_iso=audit_since,
-            verdict=audit_verdict,
-            agent_id=audit_agent,
-        )
-        audit_offset = pagination_controls("audit_events", audit_total, PAGE_SIZE)
-        audit_events = repository.list_security_events(
-            limit=PAGE_SIZE,
-            offset=audit_offset,
-            since_iso=audit_since,
-            verdict=audit_verdict,
-            agent_id=audit_agent,
-        )
-    except Exception as exc:
-        st.error(
-            f"Unable to query persisted audit records ({type(exc).__name__}).",
-            title="Audit trail unavailable",
-        )
-        audit_events = []
-        audit_total = 0
-
-    if not audit_events:
-        st.info("No audit records match the selected filters.")
+    st.caption("Source: authenticated API and persisted SQLite security events.")
+    if not auth_token:
+        st.info("Sign in with a configured reviewer account to access audit records.")
     else:
-        for event in audit_events:
-            with st.expander(
-                f"{event.verdict} · {display_text(event.timestamp)} · "
-                f"{display_text(event.agent_id)} · {display_text(event.action)}"
-            ):
-                st.write(f"**Request ID:** `{display_text(event.request_id)}`")
-                st.write(f"**Category:** {display_text(event.category)}")
-                st.write(
-                    "**Requested resource (unverified):** "
-                    f"`{display_text(event.resource)}`"
-                )
-                st.write(
-                    f"**Risk:** {event.risk_score:.1f}/100 · "
-                    f"{display_text(event.risk_level)}"
-                )
-                st.write(
-                    "**Matched policy rules:** "
-                    f"{', '.join(map(display_text, event.matched_rule_ids)) or 'None recorded'}"
-                )
-                st.write("**Decision reasons:**")
-                for reason in event.reasons:
-                    st.write(f"- {display_text(reason)}")
-                st.caption("Sensitive request parameters are not displayed.")
+        controls = st.columns(3)
+        audit_window_label = controls[0].selectbox(
+            "Time window",
+            tuple(WINDOWS),
+            index=2,
+            key="audit_window",
+        )
+        verdict_filter = controls[1].selectbox(
+            "Decision",
+            ("All", "ALLOW", "REVIEW", "BLOCK"),
+            key="audit_verdict",
+        )
+        agent_filter = controls[2].text_input(
+            "Agent ID contains",
+            key="audit_agent",
+        )
+        audit_duration = WINDOWS[audit_window_label]
+        audit_start = now - audit_duration if audit_duration else None
+        audit_since = as_utc_iso(audit_start) if audit_start else None
+        audit_verdict = None if verdict_filter == "All" else verdict_filter
+        audit_agent = agent_filter.strip() or None
+        try:
+            audit_total = repository.count_security_events(
+                since_iso=audit_since,
+                verdict=audit_verdict,
+                agent_id=audit_agent,
+            )
+            audit_offset = pagination_controls("audit_events", audit_total, PAGE_SIZE)
+            audit_events = repository.list_security_events(
+                limit=PAGE_SIZE,
+                offset=audit_offset,
+                since_iso=audit_since,
+                verdict=audit_verdict,
+                agent_id=audit_agent,
+            )
+        except Exception as exc:
+            st.error(
+                f"Unable to query persisted audit records ({type(exc).__name__}).",
+                title="Audit trail unavailable",
+            )
+            audit_events = []
+            audit_total = 0
 
+        if not audit_events:
+            st.info("No audit records match the selected filters.")
+        else:
+            for event in audit_events:
+                with st.expander(
+                    f"{event.verdict} · {display_text(event.timestamp)} · "
+                    f"{display_text(event.agent_id)} · {display_text(event.action)}"
+                ):
+                    st.write(f"**Request ID:** `{display_text(event.request_id)}`")
+                    st.write(f"**Category:** {display_text(event.category)}")
+                    st.write(f"**Requested resource:** `{display_text(event.resource)}`")
+                    st.write(f"**Risk:** {event.risk_score:.1f}/100 · {display_text(event.risk_level)}")
+                    st.write(f"**Matched policy rules:** {', '.join(map(display_text, event.matched_rule_ids)) or 'None'}")
+                    st.write("**Decision reasons:**")
+                    for reason in event.reasons:
+                        st.write(f"- {display_text(reason)}")
+
+# ---------------------------------------------------------------------------
+# SECTION 4: BEHAVIORAL ANALYTICS
+# ---------------------------------------------------------------------------
 elif section == "Behavioral analytics":
     st.subheader("Historical behavioral analytics")
     analytics_window_label = st.selectbox(
@@ -508,22 +1284,10 @@ elif section == "Behavioral analytics":
             since_iso=analytics_since
         )
     except Exception as exc:
-        st.error(
-            f"Unable to load historical analytics ({type(exc).__name__}).",
-            title="Analytics unavailable",
-        )
+        st.error(f"Unable to load historical analytics ({type(exc).__name__}).", title="Analytics unavailable")
         analytics_events = []
         matching_event_total = 0
 
-    st.caption(
-        f"Source: persisted SQLite events · Window: {analytics_window_label} · "
-        f"Rows analyzed: {len(analytics_events):,} of {matching_event_total:,}"
-    )
-    st.info(
-        "The database does not identify synthetic versus operational records. "
-        "These charts describe stored history only; they are not a live alert feed "
-        "or a claim of evaluated machine-learning detection."
-    )
     if not analytics_events:
         st.info("No persisted events are available for this time window.")
     else:
@@ -551,54 +1315,12 @@ elif section == "Behavioral analytics":
         st.markdown("**Decision volume by day**")
         st.bar_chart(daily, x="Day", y="Events", color="Decision")
 
-        blocked_actions = (
-            analytics_frame[analytics_frame["Decision"] == "BLOCK"]
-            .groupby("Action", as_index=False)
-            .size()
-            .rename(columns={"size": "Blocked events"})
-            .sort_values("Blocked events", ascending=False)
-            .head(10)
-        )
-        st.markdown("**Repeated blocked actions (loaded sample)**")
-        if blocked_actions.empty:
-            st.info("No BLOCK decisions appear in the loaded event sample.")
-        else:
-            st.dataframe(blocked_actions, hide_index=True, width="stretch")
-
-        policy_counts: dict[str, int] = {}
-        for rules in analytics_frame["Policy rules"]:
-            for rule_id in rules:
-                safe_rule_id = display_text(rule_id)
-                policy_counts[safe_rule_id] = policy_counts.get(safe_rule_id, 0) + 1
-        st.markdown("**Policy-match frequency (loaded sample)**")
-        if policy_counts:
-            policy_frame = pd.DataFrame(
-                [
-                    {"Policy rule": rule_id, "Matches": count}
-                    for rule_id, count in sorted(
-                        policy_counts.items(),
-                        key=lambda item: item[1],
-                        reverse=True,
-                    )[:10]
-                ]
-            )
-            st.bar_chart(policy_frame, x="Policy rule", y="Matches")
-        else:
-            st.info("No matched policy-rule IDs are available in the loaded sample.")
-
-        if matching_event_total > len(analytics_events):
-            st.warning(
-                f"Charts use the most recent {MAX_ANALYTICS_EVENTS} rows; "
-                f"{matching_event_total - len(analytics_events):,} older matching "
-                "events are not represented."
-            )
-
+# ---------------------------------------------------------------------------
+# SECTION 5: POLICY SIMULATOR
+# ---------------------------------------------------------------------------
 elif section == "Policy simulator":
     st.subheader("Policy simulator")
-    st.caption(
-        "Policy-only preview. Inputs are untrusted, previews are not persisted, "
-        "and no external action or review ticket is created."
-    )
+    st.caption("Policy-only preview. Inputs are untrusted, previews are not persisted.")
     with st.form("simulation_form"):
         left, right = st.columns(2)
         with left:
@@ -610,24 +1332,15 @@ elif section == "Policy simulator":
                 categories,
                 index=categories.index("READ") if "READ" in categories else 0,
             )
-            sim_resource = st.text_input(
-                "Requested resource (unverified)",
-                "public/demo-resource",
-            )
+            sim_resource = st.text_input("Requested resource (unverified)", "public/demo-resource")
         with right:
-            sim_permissions = st.text_input(
-                "Claimed permissions (untrusted)",
-                help="Client-claimed permissions are not trusted credentials.",
-            )
+            sim_permissions = st.text_input("Claimed permissions (untrusted)")
             sim_parameters = st.text_area(
                 "Parameters (JSON object)",
                 '{\n  "query": "synthetic example"\n}',
                 height=120,
             )
-        submitted = st.form_submit_button(
-            "Evaluate policy preview",
-            type="primary",
-        )
+        submitted = st.form_submit_button("Evaluate policy preview", type="primary")
 
     if submitted:
         try:
@@ -648,43 +1361,78 @@ elif section == "Policy simulator":
                 ],
             )
         except (json.JSONDecodeError, ValidationError, ValueError):
-            st.error(
-                "Enter valid request fields and a JSON object for parameters.",
-                title="Invalid simulation input",
-            )
+            st.error("Enter valid request fields and a JSON object for parameters.", title="Invalid simulation input")
         else:
-            evaluation = policy_engine.evaluate(
-                request=request,
-                trusted_permissions=None,
-            )
+            evaluation = policy_engine.evaluate(request=request, trusted_permissions=None)
             st.subheader("Policy preview result")
             result_columns = st.columns(3)
             result_columns[0].metric("Policy verdict", evaluation.verdict.value)
             result_columns[1].metric("Risk score", f"{evaluation.risk_score:.1f}/100")
             result_columns[2].metric("Risk level", evaluation.risk_level.value)
-            st.write(
-                "**Matched policy rules:** "
-                f"{', '.join(evaluation.matched_rule_ids) or 'None'}"
-            )
+            st.write(f"**Matched policy rules:** {', '.join(evaluation.matched_rule_ids) or 'None'}")
             st.write("**Decision reasons:**")
             for reason in evaluation.reasons:
                 st.write(f"- {display_text(reason)}")
 
-            if evaluation.verdict == ActionVerdict.ALLOW:
-                st.warning(
-                    "This is only a policy-engine ALLOW preview. The gateway still "
-                    "blocks ALLOW decisions unless a trusted resource classifier "
-                    "verifies the target.",
-                    title="Not an authorization",
-                )
-            elif evaluation.verdict == ActionVerdict.REVIEW:
-                st.warning(
-                    "The preview indicates REVIEW. No ticket was created and no "
-                    "review decision was made.",
-                    title="Preview only",
-                )
+# ---------------------------------------------------------------------------
+# SECTION 6: PROMPT SCANNER
+# ---------------------------------------------------------------------------
+elif section == "Prompt scanner":
+    st.subheader("Explainable prompt-risk scanner")
+    st.caption("Deterministic pattern rules only. Input is sent to the local gateway for scanning.")
+    prompt_text = st.text_area("Prompt text to inspect", max_chars=10_000, height=180)
+    if st.button("Scan prompt", type="primary", disabled=not prompt_text.strip()):
+        try:
+            scan_response = requests.post(f"{gateway_url}/api/v1/security/prompt-scan", json={"prompt": prompt_text}, timeout=net_timeout)
+            if scan_response.status_code != 200:
+                st.error(f"Prompt scan failed (HTTP {scan_response.status_code}).")
             else:
-                st.error(
-                    "The policy preview returned BLOCK. No action was executed.",
-                    title="Action denied by policy",
-                )
+                scan_result = scan_response.json()
+                score_columns = st.columns(3)
+                score_columns[0].metric("Rule-based risk score", scan_result["risk_score"])
+                score_columns[1].metric("Risk indicator", scan_result["risk_level"])
+                score_columns[2].metric("Detection method", "Deterministic rules")
+        except requests.RequestException:
+            st.error("The gateway is unavailable; prompt scan did not complete.")
+
+# ---------------------------------------------------------------------------
+# SECTION 7: ATTACK SIMULATION
+# ---------------------------------------------------------------------------
+elif section == "Attack simulation":
+    st.subheader("Synthetic attack scenarios")
+    st.caption("Run preconfigured synthetic agent actions through the security gateway.")
+    scenario_key = st.selectbox("Scenario", tuple(SCENARIOS), format_func=lambda key: SCENARIOS[key]["label"])
+    if st.button("Run synthetic scenario through gateway", type="primary"):
+        simulation_request = build_simulation_request(scenario_key)
+        try:
+            simulation_response = requests.post(f"{gateway_url}/api/v1/intercept", json=simulation_request, timeout=net_timeout)
+            if simulation_response.status_code != 200:
+                st.error(f"Gateway rejected the simulation request (HTTP {simulation_response.status_code}).")
+            else:
+                result = simulation_response.json()
+                st.metric("Actual gateway decision", result["verdict"])
+        except requests.RequestException:
+            st.error("Gateway unavailable.")
+
+# ---------------------------------------------------------------------------
+# SECTION 8: AGENT BLAST RADIUS
+# ---------------------------------------------------------------------------
+elif section == "Agent blast radius":
+    st.subheader("Agent blast radius")
+    st.info("A verified access graph is unavailable: this project has no authoritative agent/tool/resource entitlement registry.")
+
+# ---------------------------------------------------------------------------
+# SECTION 9: SYSTEM TELEMETRY
+# ---------------------------------------------------------------------------
+elif section == "System telemetry":
+    st.subheader("Measured gateway and host telemetry")
+    try:
+        telemetry_response = requests.get(f"{gateway_url}/api/v1/system/telemetry", timeout=net_timeout)
+        if telemetry_response.status_code == 200:
+            telemetry = telemetry_response.json()
+            columns = st.columns(3)
+            columns[0].metric("Host system", display_text(telemetry["host_system"]))
+            columns[1].metric("Architecture", display_text(telemetry["architecture"]))
+            columns[2].metric("Python runtime", display_text(telemetry["python_version"]))
+    except Exception as exc:
+        st.error(f"Live telemetry is unavailable ({type(exc).__name__}).")

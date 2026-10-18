@@ -151,9 +151,12 @@ cleaned up. The regular services on ports 8000/8501 remained running.
 The dashboard reads persisted records directly from the configured SQLite
 database and intentionally does not display request parameter payloads. The
 schema does not record whether events came from synthetic tests or operational
-traffic. Dashboard review decisions remain disabled until trusted reviewer
-authentication is integrated; the API `X-Reviewer-Id` header alone is not
-authentication.
+traffic. Review and audit views require server-configured local RBAC and a
+signed bearer token. Caller-supplied `X-Reviewer-Id` values do not establish
+identity. Configure demo accounts with
+`$env:PYTHONPATH="src"; .\.venv\Scripts\python.exe scripts\create_local_auth_config.py`
+and copy its output into the ignored `.env` file. Without configuration,
+privileged routes remain unavailable.
 
 The overview aggregates exact SQLite event totals for its selected time window.
 The audit table supports time, verdict, and agent filters with bounded
@@ -167,10 +170,10 @@ authoritative inventory or authorized configuration API exists.
 
 The verifier never approves or rejects a ticket. If policy returns `REVIEW`,
 it checks that the new synthetic ticket is pending and that a decision request
-without reviewer identity is rejected. Its audit-log check sends the local
-`X-Reviewer-Id` integration header; this project does not cryptographically
-authenticate that header. Use only on loopback behind a trusted identity and
-authorization layer before any external exposure.
+without a valid bearer token is rejected. Its audit-log check must use a valid
+locally configured demo account. These accounts are not a production identity
+provider; do not expose the demo authentication configuration to untrusted
+networks.
 
 The verifier returns exit code 1 if any required live check fails. It prints
 the dashboard URL for manual inspection and explicitly does not claim that an
@@ -184,16 +187,13 @@ these synthetic audit records remain there; do not use real customer data.
 
 ## Unit tests
 
-Run the project's unittest suite with a Python environment that has the test
-dependencies installed. On this machine, the PATH Python 3.13 environment was
-verified to run the suite. The project `.venv` is Python 3.14.7 and its
-installed Starlette test client currently lacks `httpx2`, so the suite fails
-during import there unless that test dependency is added. The startup runner
-continues to use `.venv` for the API and dashboard.
+Run the project's unittest suite with the existing project environment and
+capture the process exit status:
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m unittest discover -s tests -p "test_*.py" -v
+$testPython = ".\.venv\Scripts\python.exe"
+& $testPython -m unittest discover -s tests -p "test_*.py" -v
 $testExitCode = $LASTEXITCODE
 Write-Output "Test process exit code: $testExitCode"
 ```
@@ -230,6 +230,7 @@ also be stopped with Ctrl+C in their own terminals.
 - **Gateway appears offline in the dashboard:** confirm that the API is on
   `127.0.0.1:8000` and that `PORT` is not set to a different value in the
   launching environment.
-- **Reviewer identity:** `X-Reviewer-Id` is an integration boundary, not an
-  identity provider. Do not expose reviewer or audit routes to untrusted
-  clients without upstream authentication and authorization.
+- **Reviewer sign-in unavailable:** generate local demo account settings with
+  `scripts\create_local_auth_config.py`, put the values in the ignored `.env`,
+  restart the gateway, and sign in through the dashboard. Do not use this local
+  mechanism as a production identity provider.

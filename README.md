@@ -70,7 +70,7 @@ Implementation status is limited to what is present and verified locally:
 | **5** | **Decision Gating & Review Lifecycle** | **IMPLEMENTED** | Policy decisions and review state transitions; approval does not execute downstream actions. |
 | **6** | **Behavioral Anomaly Detection** | **IMPLEMENTED; SCOPE LIMITED** | Detector and analytics code are present; dashboard charts summarize persisted events and are not a live alert feed. |
 | **7** | **FastAPI Security Gateway** | **IMPLEMENTED; INTEGRATION REQUIRED** | REST endpoints are present; no production identity provider or trusted resource classifier is configured by default. |
-| **8** | **Streamlit Operations Console** | **LOCAL UI** | Reads the configured SQLite database and policy configuration. Reviewer decisions are disabled until trusted authentication is integrated. |
+| **8** | **Streamlit Operations Console** | **LOCAL UI** | Reads configured SQLite data; review/audit access is gated by server-configured local RBAC. |
 | **9** | **Automated Test Suite** | **LOCAL TESTS** | Run the command in this README; see the resulting test output rather than relying on a static badge. |
 | **10** | **LinuxONE (s390x) Deployment** | **NOT VERIFIED** | Container/deployment files and guidance are present; no actual LinuxONE deployment evidence is included. |
 
@@ -93,7 +93,7 @@ Z-AgentShield/
 ├── dashboard/
 │   └── app.py                # Streamlit SOC Operations Console
 ├── assets/images/            # Locally bundled original SVG branding
-├── tests/                    # 184 unit and integration tests (verified locally)
+├── tests/                    # Unit and integration tests
 ├── config/
 │   └── policies.yaml         # Enterprise security policy definitions
 ├── docs/                     # Architecture, demo, local run, and submission guides
@@ -116,11 +116,23 @@ Z-AgentShield/
 - Streamlit views for persisted decisions, review tickets, audit records,
   event analytics, and non-persistent policy previews.
 - Selected parameter-key and inline-secret redaction before audit persistence.
-- Dashboard sections for SOC overview, read-only human review, paginated audit
+- Dashboard sections for SOC overview, authenticated human review, paginated audit
   history, bounded historical analytics, and policy-only simulation.
 - Bounded, time-windowed event totals and repository-backed review filters.
 - Dashboard gateway/database health indicators and an original local security
   flow visual; no unofficial IBM logo or IBM integration is implied.
+- Server-configured local demo accounts with PBKDF2 password hashes and
+  expiring HMAC-signed bearer sessions; reviewer identity is never accepted
+  from a caller-supplied identity header.
+- A SHA-256 audit hash chain for newly recorded security events and review
+  decisions, with authenticated integrity verification. This is tamper
+  detection, not immutable or independently anchored storage.
+- A deterministic, explainable prompt scanner and synthetic attack scenarios
+  submitted through the actual interception API. Simulation requests persist
+  as events in the configured database; use a disposable database.
+- Evidence-linked OWASP/MITRE candidate mappings and measured local platform
+  metadata. Neither represents attribution, LinuxONE deployment evidence, or
+  CPU/memory telemetry.
 
 ## Technology stack
 
@@ -145,14 +157,22 @@ Disabling docs does not affect the implemented API routes:
 | `GET` | `/health` | Gateway health | Public |
 | `POST` | `/api/v1/intercept` | Evaluate and record an action | Public |
 | `GET` | `/api/v1/decisions/{request_id}` | Retrieve a recorded decision | Public |
-| `GET` | `/api/v1/reviews` | List pending tickets | Public |
-| `POST` | `/api/v1/reviews/{ticket_id}/decision` | Record a review decision | Requires `X-Reviewer-Id` |
-| `GET` | `/api/v1/audit/logs` | List sanitized audit records | Requires `X-Reviewer-Id` |
+| `POST` | `/api/v1/auth/login` | Create a signed session from configured local credentials | Public login; disabled until configured |
+| `GET` | `/api/v1/reviews` | List pending tickets | Authenticated bearer token |
+| `POST` | `/api/v1/reviews/{ticket_id}/decision` | Record a review decision | Authenticated bearer token |
+| `GET` | `/api/v1/audit/logs` | List sanitized audit records | Authenticated bearer token |
+| `GET` | `/api/v1/audit/integrity` | Verify recorded hash-chain links | Authenticated bearer token |
+| `POST` | `/api/v1/security/prompt-scan` | Run non-persistent deterministic rules | Public; prompt is not echoed |
+| `GET` | `/api/v1/system/telemetry` | Return bounded local host and route measurements | Public |
 
-The reviewer header is an integration boundary, not authentication. A trusted
-identity proxy must validate the reviewer and inject the header before the
-privileged routes are exposed. Until that exists, the dashboard displays the
-queue but keeps approval/rejection controls disabled.
+Configure one local account by running
+`$env:PYTHONPATH="src"; .\.venv\Scripts\python.exe scripts\create_local_auth_config.py`
+and copying the generated `AUTH_USERS_JSON` and `AUTH_TOKEN_SECRET` values to
+the ignored `.env` file. The script prompts for passwords without echoing or
+storing them. Without server-side account and signing-secret configuration,
+privileged routes remain unavailable. These local demo accounts are not a
+production identity provider; both configured roles may use the review and
+audit workflows.
 
 The API's root response reports `docs: null` when documentation is disabled.
 Internal clients should use the documented route contract and do not depend on
@@ -164,8 +184,8 @@ the OpenAPI endpoint in deployment modes.
   24-hour, 7-day, 30-day, or all-history window; recent event and BLOCK rows
   come from the repository. Pending-review totals are queried independently.
 - **Human review:** paginated pending tickets from the repository, filtered by
-  agent ID and risk level. Decision controls are disabled because authenticated
-  reviewer authorization and a trusted identity integration are absent.
+  agent ID and risk level. Approve/reject requests use the gateway’s signed
+  bearer token, with reviewer identity derived from the server-verified token.
 - **Audit trail:** paginated persisted events filtered by time window, decision,
   and agent ID. Event-type filtering is unavailable because the schema has no
   event-type field. Parameters are not displayed.
@@ -176,9 +196,17 @@ the OpenAPI endpoint in deployment modes.
   persisted and cannot authorize an action. A policy ALLOW preview is not a
   gateway ALLOW; the gateway still fails closed until a trusted resource
   classifier is configured.
-- Agent inventory, policy editing, and access/settings screens are not shown:
-  the backend has no authoritative agent registry, policy administration API,
-  or dashboard authentication/authorization system to support them.
+- A verified agent/tool/resource graph is unavailable because no authoritative
+  relationship registry exists. The dashboard reports this limitation rather
+  than inferring access relationships from event strings.
+- Admin policy editing/version rollback and downloadable compliance PDF/CSV
+  reports are not implemented. Policy previews remain separate from active
+  configuration and persisted events.
+- CPU and memory telemetry are unavailable without an approved host-metrics
+  provider. Host architecture is not evidence of LinuxONE deployment.
+- Synthetic simulations use the actual gateway and persist events; they are
+  not mixed with real operational traffic by an explicit database provenance
+  marker, so run them only against an isolated demo database.
 
 ## Installation
 

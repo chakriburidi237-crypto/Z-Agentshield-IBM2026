@@ -23,11 +23,15 @@ use `create_app(services=...)` to inject isolated services.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Return minimal service status and version. |
+| `POST` | `/api/v1/auth/login` | Issue a signed bearer token for a configured local account. |
 | `POST` | `/api/v1/intercept` | Validate and evaluate an agent action. A `REVIEW` result includes a review ticket ID. |
 | `GET` | `/api/v1/decisions/{request_id}` | Retrieve a recorded decision by request ID. |
-| `GET` | `/api/v1/reviews?limit=50` | List pending review tickets; `limit` is bounded to 1–200. |
+| `GET` | `/api/v1/reviews?limit=50` | List pending review tickets; authenticated and bounded to 1–200. |
 | `POST` | `/api/v1/reviews/{ticket_id}/decision` | Record an `APPROVED` or `REJECTED` decision and optional reviewer notes. |
-| `GET` | `/api/v1/audit/logs?limit=50&offset=0&verdict=BLOCK` | List paginated, sanitized audit events. `verdict` is optional and accepts `ALLOW`, `REVIEW`, or `BLOCK`. |
+| `GET` | `/api/v1/audit/logs?limit=50&offset=0&verdict=BLOCK` | List authenticated, paginated, sanitized audit events. |
+| `GET` | `/api/v1/audit/integrity` | Authenticated verification of the SHA-256 links recorded in the audit chain. |
+| `POST` | `/api/v1/security/prompt-scan` | Apply explainable deterministic rules without persisting or echoing the prompt. |
+| `GET` | `/api/v1/system/telemetry` | Return local platform metadata and bounded measured fields. |
 
 `POST /api/v1/intercept` accepts the core `InterceptRequest` schema. Extra
 fields are rejected. Caller-supplied
@@ -43,17 +47,27 @@ ticket and the application's authorized reviewer identity.
 
 ## Reviewer identity and deployment boundary
 
-Review decisions and audit-log reads require `X-Reviewer-Id`. The API does not
-verify credentials or roles itself: this header is an integration boundary, not
-authentication. **Do not expose these routes directly to untrusted clients.**
-Deploy behind an authentication proxy/API gateway that validates identity,
-authorizes reviewers, strips any inbound `X-Reviewer-Id`, and injects the
-verified reviewer identity. Do not derive reviewer identity or administrator
-privileges from request JSON.
+The review queue, review decisions, audit logs, and integrity verification
+require a signed bearer token issued by `/api/v1/auth/login`. Users and roles
+are read only from server-side `AUTH_USERS_JSON`; password hashes are
+PBKDF2-SHA256, and tokens are signed with `AUTH_TOKEN_SECRET`. Caller-supplied
+`X-Reviewer-Id` values and request-body role claims do not establish identity.
+The configurable token lifetime defaults to 900 seconds and is bounded to
+60–86400 seconds.
 
-The pending-review listing and decision lookup are not authenticated by this
-gateway. Restrict network access to them at the same trusted ingress boundary
-when their metadata is sensitive.
+Generate one local demo account record with
+`$env:PYTHONPATH="src"; .\.venv\Scripts\python.exe scripts\create_local_auth_config.py`
+and copy the output into the ignored `.env`. If authentication is unconfigured,
+privileged routes return unavailable/unauthenticated errors rather than
+allowing access. SOC Analyst and Security Admin are supported, server-assigned
+roles; both currently can use the review and audit workflow. This local
+authentication is a development/demo integration, not a production identity
+provider. Keep the gateway on trusted networks and use a proper identity
+provider before production deployment.
+
+Decision lookup and interception are public gateway endpoints. Do not expose
+them to an untrusted network without deployment-specific authentication,
+authorization, and rate limiting.
 
 ## Response and failure behavior
 
@@ -84,5 +98,9 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-The reviewer-header integration must be replaced or backed by a real
-authentication and authorization layer before production exposure.
+Approval only changes the persisted review ticket and adds a chained audit
+entry; it does not execute the original action. The SHA-256 chain detects
+record/link changes but is not immutable against an operator who can rewrite
+the database, and older records are not retroactively chained. No LinuxONE
+deployment, trusted resource registry, or production identity provider is
+verified by this repository.

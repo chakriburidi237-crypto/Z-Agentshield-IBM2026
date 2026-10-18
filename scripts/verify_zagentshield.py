@@ -76,9 +76,7 @@ class Verification:
                 trusted_permissions=None,
                 anomaly_assessment=None,
             ).verdict.value
-            # The verifier uses the default gateway graph, which has no trusted
-            # resource-classification integration configured.
-            return "BLOCK" if verdict == "ALLOW" else verdict
+            return verdict
         except Exception as exc:
             print(f"[WARN] Could not calculate configured policy baseline: {exc}")
             return None

@@ -33,6 +33,17 @@ CREATE INDEX IF NOT EXISTS idx_security_events_agent_id ON security_events(agent
 CREATE INDEX IF NOT EXISTS idx_security_events_verdict ON security_events(verdict);
 CREATE INDEX IF NOT EXISTS idx_security_events_timestamp ON security_events(timestamp);
 
+-- New records are chained from the point this schema is initialized.
+CREATE TABLE IF NOT EXISTS audit_integrity_chain (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    previous_hash TEXT NOT NULL,
+    entry_hash TEXT NOT NULL,
+    timestamp TEXT NOT NULL
+);
+
 -- Table: review_queue (Human-in-the-Loop Tickets)
 CREATE TABLE IF NOT EXISTS review_queue (
     ticket_id TEXT PRIMARY KEY,
