@@ -63,12 +63,23 @@ if "theme" not in st.session_state:
     st.session_state["theme"] = "dark"
 
 is_dark = st.session_state["theme"] == "dark"
-bg_color = "#070b14" if is_dark else "#f4f6fb"
+bg_color = "#070b14" if is_dark else "#f8fafc"
 card_bg = "#0d1527" if is_dark else "#ffffff"
-card_border = "#1a2640" if is_dark else "#e2e8f0"
+card_border = "#1a2640" if is_dark else "#cbd5e1"
 text_primary = "#f8fafc" if is_dark else "#0f172a"
-text_secondary = "#94a3b8" if is_dark else "#64748b"
+text_secondary = "#94a3b8" if is_dark else "#475569"
 sidebar_bg = "#090d18" if is_dark else "#ffffff"
+sidebar_heading = "#38bdf8" if is_dark else "#0284c7"
+sidebar_text = "#cbd5e1" if is_dark else "#334155"
+input_bg = "#0b1329" if is_dark else "#ffffff"
+input_border = "#1e3a8a" if is_dark else "#cbd5e1"
+input_text = "#f8fafc" if is_dark else "#0f172a"
+container_bg = "#0c1427" if is_dark else "#ffffff"
+container_border = "#1e293b" if is_dark else "#e2e8f0"
+btn_secondary_bg = "#0f1c3f" if is_dark else "#f8fafc"
+btn_secondary_text = "#f8fafc" if is_dark else "#0f172a"
+btn_secondary_border = "#1e3a8a" if is_dark else "#cbd5e1"
+btn_secondary_hover_bg = "#1e3a8a" if is_dark else "#e2e8f0"
 
 st.markdown(
     f"""
@@ -406,9 +417,9 @@ section[data-testid="stSidebar"] {{
 div[data-baseweb="input"] input,
 div[data-baseweb="textarea"] textarea,
 .stTextArea div[data-baseweb="textarea"] {{
-    background-color: #0b1329 !important;
-    color: #f8fafc !important;
-    border: 1.5px solid #1e3a8a !important;
+    background-color: {input_bg} !important;
+    color: {input_text} !important;
+    border: 1.5px solid {input_border} !important;
     border-radius: 8px !important;
     font-size: 13.5px !important;
 }}
@@ -421,42 +432,54 @@ div[data-baseweb="textarea"] textarea,
 
 /* Fix Streamlit Selectbox and Dropdowns */
 div[data-baseweb="select"] > div {{
-    background-color: #0b1329 !important;
-    color: #f8fafc !important;
-    border: 1.5px solid #1e3a8a !important;
+    background-color: {input_bg} !important;
+    color: {input_text} !important;
+    border: 1.5px solid {input_border} !important;
     border-radius: 8px !important;
 }}
 div[data-baseweb="select"] span {{
-    color: #f8fafc !important;
+    color: {input_text} !important;
+    font-weight: 600 !important;
 }}
 ul[data-baseweb="menu"] {{
-    background-color: #0b1329 !important;
-    border: 1px solid #1e3a8a !important;
+    background-color: {input_bg} !important;
+    border: 1px solid {input_border} !important;
 }}
 li[data-baseweb="menu-item"] {{
-    color: #f8fafc !important;
+    color: {input_text} !important;
+    font-weight: 600 !important;
 }}
 li[data-baseweb="menu-item"]:hover {{
-    background-color: #1e3a8a !important;
+    background-color: {btn_secondary_hover_bg} !important;
 }}
 
-/* High-Contrast Labels and Titles */
+/* High-Contrast Labels, Titles, Radios, and Headings */
 label[data-testid="stWidgetLabel"],
 .stWidgetLabel label,
 label[data-testid="stWidgetLabel"] p,
-.stWidgetLabel p {{
-    color: #f1f5f9 !important;
+.stWidgetLabel p,
+div[data-testid="stRadio"] label,
+div[data-testid="stRadio"] label p,
+div[role="radiogroup"] label,
+div[role="radiogroup"] label p {{
+    color: {text_primary} !important;
     font-weight: 700 !important;
     font-size: 13px !important;
+}}
+
+h1, h2, h3, h4, h5, h6,
+.stSubheader,
+.stSubheader p {{
+    color: {text_primary} !important;
 }}
 
 /* Captions and Subtitles */
 .stCaption,
 [data-testid="stCaptionContainer"],
 [data-testid="stCaptionContainer"] p {{
-    color: #94a3b8 !important;
+    color: {text_secondary} !important;
     font-size: 12px !important;
-    font-weight: 500 !important;
+    font-weight: 600 !important;
 }}
 
 /* Sidebar Headings and text */
@@ -466,12 +489,18 @@ section[data-testid="stSidebar"] h3,
 section[data-testid="stSidebar"] h4,
 section[data-testid="stSidebar"] .stSubheader,
 section[data-testid="stSidebar"] .stSubheader p {{
-    color: #38bdf8 !important;
+    color: {sidebar_heading} !important;
     font-weight: 800 !important;
     letter-spacing: -0.2px !important;
 }}
 section[data-testid="stSidebar"] p {{
-    color: #cbd5e1 !important;
+    color: {sidebar_text} !important;
+    font-weight: 600 !important;
+}}
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] label p {{
+    color: {text_primary} !important;
+    font-weight: 700 !important;
 }}
 
 /* Approve / Reject and Action Buttons */
@@ -502,33 +531,42 @@ div[data-testid="stForm"] button:not([kind="primary"]) {{
 section[data-testid="stSidebar"] button,
 button[kind="secondary"],
 button[data-testid="baseButton-secondary"] {{
-    background-color: #0f1c3f !important;
-    color: #f8fafc !important;
-    border: 1.5px solid #1e3a8a !important;
+    background-color: {btn_secondary_bg} !important;
+    color: {btn_secondary_text} !important;
+    border: 1.5px solid {btn_secondary_border} !important;
     border-radius: 8px !important;
     font-weight: 600 !important;
 }}
 section[data-testid="stSidebar"] button:hover,
 button[kind="secondary"]:hover {{
-    background-color: #1e3a8a !important;
+    background-color: {btn_secondary_hover_bg} !important;
     border-color: #38bdf8 !important;
-    color: #ffffff !important;
+    color: {'#ffffff' if is_dark else '#0284c7'} !important;
 }}
 
 /* Containers with border */
 div[data-testid="stVerticalBlockBorderWrapper"] > div {{
-    background-color: #0c1427 !important;
-    border: 1px solid #1e293b !important;
+    background-color: {container_bg} !important;
+    border: 1px solid {container_border} !important;
     border-radius: 12px !important;
 }}
 
 /* Metrics */
 [data-testid="stMetricValue"] {{
-    color: #f8fafc !important;
+    color: {text_primary} !important;
     font-weight: 800 !important;
 }}
 [data-testid="stMetricLabel"] p {{
-    color: #94a3b8 !important;
+    color: {text_secondary} !important;
+    font-weight: 600 !important;
+}}
+
+/* Alert boxes */
+div[data-testid="stAlert"] {{
+    border-radius: 8px !important;
+}}
+div[data-testid="stAlert"] p {{
+    color: {'#f8fafc' if is_dark else '#0f172a'} !important;
     font-weight: 600 !important;
 }}
 </style>
