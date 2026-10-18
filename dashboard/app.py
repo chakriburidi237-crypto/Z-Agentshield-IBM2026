@@ -1558,7 +1558,8 @@ elif section == "Prompt scanner":
 
         if scan_result is None:
             # High-performance local deterministic scanner fallback
-            from zagentshield.prompt_scanner import scan_prompt as local_scan_prompt, mappings_for_rule as local_mappings
+            from zagentshield.prompt_scanner import scan_prompt as local_scan_prompt
+            from zagentshield.threat_mappings import mappings_for_rule as local_mappings
             raw_scan = local_scan_prompt(prompt_text)
             scan_result = {
                 "risk_score": raw_scan.risk_score,
