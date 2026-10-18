@@ -15,6 +15,7 @@ if str(SRC_DIR) not in sys.path:
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from pydantic import ValidationError
 
 from zagentshield.audit.redaction import redact_sensitive_data
@@ -882,13 +883,163 @@ if section == "SOC overview":
     donut_track = "#0e1a33" if is_dark else "#f1f5f9"
 
     if is_showcase:
-        # 5 Top KPI Cards
-        st.html(
-            f"""
+        # High-fidelity native SVG charts & icons via sandboxed component iframe
+        # (DOMPurify in st.html strips raw SVG paths, defs, and circles)
+        card_bg = "#0b1329" if is_dark else "#ffffff"
+        card_border = "#162544" if is_dark else "#e2e8f0"
+        card_shadow = "rgba(0, 0, 0, 0.25)" if is_dark else "rgba(0, 0, 0, 0.05)"
+        row_border = "rgba(22, 37, 68, 0.6)" if is_dark else "rgba(226, 232, 240, 0.8)"
+
+        showcase_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* {{
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}}
+body {{
+    background: transparent;
+    overflow: hidden;
+}}
+.kpi-row {{
+    display: flex;
+    gap: 14px;
+    width: 100%;
+    margin-bottom: 14px;
+}}
+.kpi-card {{
+    flex: 1;
+    background: {card_bg};
+    border: 1px solid {card_border};
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 14px {card_shadow};
+}}
+.kpi-icon-wrap {{
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}}
+.kpi-info {{
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}}
+.kpi-title {{
+    font-size: 11px;
+    font-weight: 600;
+    color: {text_secondary};
+    text-transform: capitalize;
+    margin-bottom: 2px;
+}}
+.kpi-value {{
+    font-size: 20px;
+    font-weight: 800;
+    color: {text_primary};
+    line-height: 1.15;
+    letter-spacing: -0.5px;
+}}
+.kpi-trend {{
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 2px;
+}}
+.panels-grid {{
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 14px;
+    width: 100%;
+}}
+.panel-card {{
+    background: {card_bg};
+    border: 1px solid {card_border};
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 4px 14px {card_shadow};
+    display: flex;
+    flex-direction: column;
+}}
+.panel-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}}
+.panel-title {{
+    font-size: 13px;
+    font-weight: 700;
+    color: {text_primary};
+}}
+.legend-row {{
+    display: flex;
+    gap: 12px;
+    font-size: 10.5px;
+    font-weight: 700;
+}}
+.legend-allow {{ color: #10b981; }}
+.legend-review {{ color: #f59e0b; }}
+.legend-block {{ color: #ef4444; }}
+.soc-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}}
+.soc-table th {{
+    text-align: left;
+    padding: 6px 8px;
+    color: {text_secondary};
+    font-weight: 600;
+    border-bottom: 1px solid {card_border};
+    font-size: 10px;
+    text-transform: uppercase;
+}}
+.soc-table td {{
+    padding: 8px;
+    border-bottom: 1px solid {row_border};
+    color: {text_primary};
+}}
+.pill-badge {{
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 9999px;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+}}
+.pill-allow {{
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}}
+.pill-review {{
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}}
+.pill-block {{
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}}
+</style>
+</head>
+<body>
 <div class="kpi-row">
     <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background: rgba(2, 132, 199, 0.15); color: #38bdf8;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
             </svg>
         </div>
@@ -900,7 +1051,7 @@ if section == "SOC overview":
     </div>
     <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
             </svg>
@@ -913,7 +1064,7 @@ if section == "SOC overview":
     </div>
     <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
                 <line x1="12" y1="9" x2="12" y2="13"></line>
                 <line x1="12" y1="17" x2="12.01" y2="17"></line>
@@ -927,7 +1078,7 @@ if section == "SOC overview":
     </div>
     <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                 <line x1="12" y1="8" x2="12" y2="12"></line>
                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -941,7 +1092,7 @@ if section == "SOC overview":
     </div>
     <div class="kpi-card">
         <div class="kpi-icon-wrap" style="background: rgba(56, 189, 248, 0.15); color: #0284c7;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="20" x2="18" y2="10"></line>
                 <line x1="12" y1="20" x2="12" y2="4"></line>
                 <line x1="6" y1="20" x2="6" y2="14"></line>
@@ -954,12 +1105,7 @@ if section == "SOC overview":
         </div>
     </div>
 </div>
-"""
-        )
 
-        # 3 Panels: Decision Trend (area curves), Threat Distribution (donut), Recent Events (table)
-        st.html(
-            f"""
 <div class="panels-grid">
     <!-- Panel 1: Decision Trend Area Chart -->
     <div class="panel-card" style="grid-column: span 6;">
@@ -1077,8 +1223,10 @@ if section == "SOC overview":
         </table>
     </div>
 </div>
+</body>
+</html>
 """
-        )
+        components.html(showcase_html, height=430, scrolling=False)
 
         with st.expander("Persisted SQLite telemetry breakdown & raw metrics", expanded=False):
             metric_rows = (
