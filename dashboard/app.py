@@ -90,8 +90,73 @@ html, body, [class*="css"], .stApp {{
     color: {text_primary} !important;
 }}
 
-#MainMenu, footer, header {{
-    visibility: hidden;
+#MainMenu, footer {{
+    visibility: hidden !important;
+    display: none !important;
+}}
+
+header[data-testid="stHeader"] {{
+    background: transparent !important;
+    height: 2.8rem !important;
+    z-index: 9999 !important;
+}}
+
+/* Sidebar open/expand control (visible when sidebar is closed) */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"],
+button[data-testid="stSidebarCollapsedControl"] {{
+    visibility: visible !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background-color: {card_bg} !important;
+    color: {text_primary} !important;
+    border: 1.5px solid {card_border} !important;
+    border-radius: 8px !important;
+    padding: 6px 10px !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+    cursor: pointer !important;
+    z-index: 100000 !important;
+    transition: all 0.2s ease !important;
+}}
+
+[data-testid="stSidebarCollapsedControl"]:hover,
+[data-testid="collapsedControl"]:hover {{
+    background-color: {btn_secondary_hover_bg} !important;
+    border-color: #38bdf8 !important;
+}}
+
+[data-testid="stSidebarCollapsedControl"] svg,
+[data-testid="collapsedControl"] svg {{
+    fill: {text_primary} !important;
+    stroke: {text_primary} !important;
+    color: {text_primary} !important;
+}}
+
+/* Sidebar close control (visible when sidebar is open) */
+button[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapseButton"] {{
+    visibility: visible !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background-color: {card_bg} !important;
+    color: {text_primary} !important;
+    border: 1.5px solid {card_border} !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}}
+
+button[data-testid="stSidebarCollapseButton"]:hover {{
+    background-color: {btn_secondary_hover_bg} !important;
+    border-color: #38bdf8 !important;
+}}
+
+button[data-testid="stSidebarCollapseButton"] svg {{
+    fill: {text_primary} !important;
+    stroke: {text_primary} !important;
+    color: {text_primary} !important;
 }}
 
 .block-container {{
