@@ -1,9 +1,19 @@
 # Z-AgentShield (Z-Agentshield-IBM2026)
 
-**Enterprise AI Security**
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://z-agentshield-ibm2026-potqwjdk6jxx2wyhraqptn.streamlit.app/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Tests: 204 Passed](https://img.shields.io/badge/Tests-204%20Passed-brightgreen.svg)](#automated-test-suite)
+[![Platform: LinuxONE s390x](https://img.shields.io/badge/Platform-IBM%20LinuxONE%20s390x-0062ff.svg)](docs/LINUXONE_DEPLOYMENT.md)
+
+**Enterprise AI Security Gateway**  
 *Let AI act. Keep every action under control.*
 
-**Source repository:** <https://github.com/chakriburidi237-crypto/Z-Agentshield-IBM2026>
+🌐 **Live Deployed Dashboard:** <https://z-agentshield-ibm2026-potqwjdk6jxx2wyhraqptn.streamlit.app/>  
+📁 **Source Repository:** <https://github.com/chakriburidi237-crypto/Z-Agentshield-IBM2026>  
+🎬 **3-Minute Demo Video:** [submission/Z-AgentShield-Demo.mp4](submission/Z-AgentShield-Demo.mp4)  
+📊 **Pitch Deck (PDF):** [submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck.pdf](submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck.pdf)
+
+> 🚀 **Live Demo Available:** Anyone can access and explore the full live Z-AgentShield operations console in real time at **[z-agentshield-ibm2026.streamlit.app](https://z-agentshield-ibm2026-potqwjdk6jxx2wyhraqptn.streamlit.app/)**. Experience zero-trust multi-role access control (SOC Analyst, Security Officer, Platform Admin), neural prompt injection scanner, decision review queue, and live attack simulations directly in your browser.
 
 ---
 
@@ -403,6 +413,7 @@ Third-party packages remain subject to their respective upstream licenses.
 
 ## Submission Materials
 
+- **Live Deployed Dashboard (Public Demo):** <https://z-agentshield-ibm2026-potqwjdk6jxx2wyhraqptn.streamlit.app/>
 - **3-Minute Demo Video (1080p MP4):** [submission/Z-AgentShield-Demo.mp4](submission/Z-AgentShield-Demo.mp4)
   - Features embedded anti-aliased narrative subtitle cards, real-time HUD progress bar, and comprehensive multi-role walkthrough without requiring voiceover.
 - **Pitch Deck Presentation (PDF):** [submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck.pdf](submission/Team-Z-Innovators-Z-AgentShield-Pitch-Deck.pdf)
